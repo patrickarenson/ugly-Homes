@@ -172,9 +172,15 @@ struct HomePostView: View {
     @State private var showHeartAnimation = false
     @State private var showEditPost = false
 
+    // User-generated pricing feature
+    @State private var upVoted = false
+    @State private var downVoted = false
+    @State private var estimatedPrice: Int
+
     init(home: Home) {
         self.home = home
         _likeCount = State(initialValue: home.likesCount)
+        _estimatedPrice = State(initialValue: home.price ?? 0)
     }
 
     var body: some View {
@@ -338,6 +344,48 @@ struct HomePostView: View {
                 }
 
                 Spacer()
+
+                // User-Generated Pricing Feature - Right Side
+                if home.price != nil {
+                    HStack(spacing: 6) {
+                        // Up arrow button
+                        Button(action: {
+                            if !upVoted {
+                                upVoted = true
+                                estimatedPrice = Int(Double(estimatedPrice) * 1.005)
+                            }
+                        }) {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(upVoted ? .gray : .white)
+                                .frame(width: 32, height: 32)
+                                .background(upVoted ? Color.gray.opacity(0.4) : Color.green)
+                                .cornerRadius(6)
+                        }
+                        .disabled(upVoted)
+
+                        // Down arrow button
+                        Button(action: {
+                            if !downVoted {
+                                downVoted = true
+                                estimatedPrice = Int(Double(estimatedPrice) * 0.995)
+                            }
+                        }) {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(downVoted ? .gray : .white)
+                                .frame(width: 32, height: 32)
+                                .background(downVoted ? Color.gray.opacity(0.4) : Color.red)
+                                .cornerRadius(6)
+                        }
+                        .disabled(downVoted)
+
+                        // Estimated price in orange
+                        Text("Est. $\(estimatedPrice)")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.orange)
+                    }
+                }
             }
             .foregroundColor(.black)
             .padding(.horizontal)

@@ -361,6 +361,11 @@ struct HomePostView: View {
                         }
                         .disabled(upVoted)
 
+                        // Estimated price in orange
+                        Text("$\(estimatedPrice)")
+                            .font(.subheadline)
+                            .foregroundColor(.orange)
+
                         // Down arrow button
                         Button(action: {
                             if !downVoted {
@@ -373,11 +378,6 @@ struct HomePostView: View {
                                 .foregroundColor(downVoted ? .gray.opacity(0.5) : .black)
                         }
                         .disabled(downVoted)
-
-                        // Estimated price in orange
-                        Text("$\(estimatedPrice)")
-                            .font(.subheadline)
-                            .foregroundColor(.orange)
                     }
                 }
             }

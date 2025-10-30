@@ -347,7 +347,7 @@ struct HomePostView: View {
 
                 // User-Generated Pricing Feature - Right Side
                 if home.price != nil {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 4) {
                         // Up arrow button
                         Button(action: {
                             if !upVoted {
@@ -356,11 +356,8 @@ struct HomePostView: View {
                             }
                         }) {
                             Image(systemName: "arrow.up")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(upVoted ? .gray : .white)
-                                .frame(width: 32, height: 32)
-                                .background(upVoted ? Color.gray.opacity(0.4) : Color.green)
-                                .cornerRadius(6)
+                                .font(.title3)
+                                .foregroundColor(upVoted ? .gray.opacity(0.5) : .black)
                         }
                         .disabled(upVoted)
 
@@ -372,17 +369,14 @@ struct HomePostView: View {
                             }
                         }) {
                             Image(systemName: "arrow.down")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(downVoted ? .gray : .white)
-                                .frame(width: 32, height: 32)
-                                .background(downVoted ? Color.gray.opacity(0.4) : Color.red)
-                                .cornerRadius(6)
+                                .font(.title3)
+                                .foregroundColor(downVoted ? .gray.opacity(0.5) : .black)
                         }
                         .disabled(downVoted)
 
                         // Estimated price in orange
-                        Text("Est. $\(estimatedPrice)")
-                            .font(.system(size: 13, weight: .semibold))
+                        Text("$\(estimatedPrice)")
+                            .font(.subheadline)
                             .foregroundColor(.orange)
                     }
                 }

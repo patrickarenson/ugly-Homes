@@ -118,8 +118,41 @@ struct CommentsView: View {
         }
     }
 
+    func containsURL(_ text: String) -> Bool {
+        // Check for common URL patterns
+        let lowercaseText = text.lowercased()
+
+        // Check for http:// or https://
+        if lowercaseText.contains("http://") || lowercaseText.contains("https://") {
+            return true
+        }
+
+        // Check for www.
+        if lowercaseText.contains("www.") {
+            return true
+        }
+
+        // Check for common TLDs (top-level domains)
+        let tlds = [".com", ".net", ".org", ".io", ".co", ".app", ".dev", ".ai", ".xyz", ".me", ".tv", ".info", ".biz"]
+        for tld in tlds {
+            if lowercaseText.contains(tld) {
+                return true
+            }
+        }
+
+        return false
+    }
+
     func postComment() {
         guard !newComment.isEmpty else { return }
+
+        // Check for URLs
+        if containsURL(newComment) {
+            // Silently reject - clear the text field
+            newComment = ""
+            return
+        }
+
         isSending = true
 
         Task {

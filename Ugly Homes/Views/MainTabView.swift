@@ -13,25 +13,25 @@ struct MainTabView: View {
             FeedView()
                 .tabItem {
                     Image(systemName: "flame.fill")
-                        .padding(.top, 4)
+                        .padding(.top, 10)
                 }
 
             LocationFeedView()
                 .tabItem {
                     Image(systemName: "map.fill")
-                        .padding(.top, 4)
+                        .padding(.top, 10)
                 }
 
             PriceFeedView()
                 .tabItem {
                     Image(systemName: "dollarsign.circle.fill")
-                        .padding(.top, 4)
+                        .padding(.top, 10)
                 }
 
             ProfileView()
                 .tabItem {
                     Image(systemName: "person.circle.fill")
-                        .padding(.top, 4)
+                        .padding(.top, 10)
                 }
         }
         .accentColor(.orange)

@@ -143,7 +143,6 @@ struct FeedView: View {
                     .select("*, profile:user_id(*)")
                     .eq("is_active", value: true)
                     .eq("is_archived", value: false)
-                    .order("likes_count", ascending: false)
                     .order("created_at", ascending: false)
                     .execute()
                     .value

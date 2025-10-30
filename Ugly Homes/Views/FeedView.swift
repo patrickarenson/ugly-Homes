@@ -180,7 +180,7 @@ struct HomePostView: View {
     init(home: Home) {
         self.home = home
         _likeCount = State(initialValue: home.likesCount)
-        _estimatedPrice = State(initialValue: home.price ?? 0)
+        _estimatedPrice = State(initialValue: NSDecimalNumber(decimal: home.price ?? 0).intValue)
     }
 
     var body: some View {

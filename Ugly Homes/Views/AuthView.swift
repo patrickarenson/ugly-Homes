@@ -118,7 +118,7 @@ struct AuthView: View {
                     let existingProfiles: [Profile] = try await SupabaseManager.shared.client
                         .from("profiles")
                         .select()
-                        .ilike("username", value: lowercaseUsername)
+                        .ilike("username", pattern: lowercaseUsername)
                         .execute()
                         .value
 

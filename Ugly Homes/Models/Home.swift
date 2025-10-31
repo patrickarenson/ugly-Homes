@@ -29,6 +29,12 @@ struct Home: Codable, Identifiable {
     var isActive: Bool
     var isArchived: Bool?
     var archivedAt: Date?
+    var soldStatus: String?
+    var soldDate: Date?
+    var openHouseDate: Date?
+    var openHouseEndDate: Date?
+    var openHousePaid: Bool?
+    var stripePaymentId: String?
     var subscriptionId: String?
     var expiresAt: Date?
     let createdAt: Date
@@ -59,6 +65,12 @@ struct Home: Codable, Identifiable {
         case isActive = "is_active"
         case isArchived = "is_archived"
         case archivedAt = "archived_at"
+        case soldStatus = "sold_status"
+        case soldDate = "sold_date"
+        case openHouseDate = "open_house_date"
+        case openHouseEndDate = "open_house_end_date"
+        case openHousePaid = "open_house_paid"
+        case stripePaymentId = "stripe_payment_id"
         case subscriptionId = "subscription_id"
         case expiresAt = "expires_at"
         case createdAt = "created_at"

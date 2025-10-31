@@ -101,9 +101,7 @@ struct PriceFeedView: View {
                 Divider()
 
                 ZStack {
-                    if isLoading {
-                        ProgressView()
-                    } else if filteredHomes.isEmpty {
+                    if filteredHomes.isEmpty {
                         VStack(spacing: 20) {
                             Image(systemName: searchText.isEmpty ? "dollarsign.slash.circle" : "magnifyingglass")
                                 .font(.system(size: 60))

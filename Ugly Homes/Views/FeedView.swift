@@ -89,9 +89,7 @@ struct FeedView: View {
 
                 // Content
                 ZStack {
-                    if isLoading {
-                        ProgressView()
-                    } else if filteredHomes.isEmpty {
+                    if filteredHomes.isEmpty {
                         VStack(spacing: 20) {
                             Image(systemName: searchText.isEmpty ? "house.slash" : "magnifyingglass")
                                 .font(.system(size: 60))
@@ -136,6 +134,9 @@ struct FeedView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshFeed"))) { _ in
                 loadHomes()
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshProfile"))) { _ in
+                loadHomes() // Reload to get updated profile photos
+            }
         }
     }
 
@@ -177,6 +178,11 @@ struct FeedView: View {
                     let isActive: Bool
                     let isArchived: Bool?
                     let archivedAt: Date?
+                    let soldStatus: String?
+                    let soldDate: Date?
+                    let openHouseDate: Date?
+                    let openHouseEndDate: Date?
+                    let openHousePaid: Bool?
                     let subscriptionId: String?
                     let expiresAt: Date?
                     let createdAt: Date
@@ -205,6 +211,11 @@ struct FeedView: View {
                         case isActive = "is_active"
                         case isArchived = "is_archived"
                         case archivedAt = "archived_at"
+                        case soldStatus = "sold_status"
+                        case soldDate = "sold_date"
+                        case openHouseDate = "open_house_date"
+                        case openHouseEndDate = "open_house_end_date"
+                        case openHousePaid = "open_house_paid"
                         case subscriptionId = "subscription_id"
                         case expiresAt = "expires_at"
                         case createdAt = "created_at"
@@ -220,50 +231,58 @@ struct FeedView: View {
 
                 print("✅ Loaded \(response.count) trending homes")
 
-                // Convert TrendingHomeResponse to Home and fetch profiles
+                // OPTIMIZATION: Fetch all profiles in a single query instead of one-by-one
+                struct ProfileResponse: Codable {
+                    let id: UUID
+                    let username: String
+                    let fullName: String?
+                    let avatarUrl: String?
+                    let bio: String?
+                    let createdAt: Date
+                    let updatedAt: Date
+
+                    enum CodingKeys: String, CodingKey {
+                        case id
+                        case username
+                        case fullName = "full_name"
+                        case avatarUrl = "avatar_url"
+                        case bio
+                        case createdAt = "created_at"
+                        case updatedAt = "updated_at"
+                    }
+                }
+
+                // Get unique user IDs
+                let uniqueUserIds = Array(Set(response.map { $0.userId.uuidString }))
+                print("📥 Fetching \(uniqueUserIds.count) unique profiles in one query...")
+
+                // Fetch all profiles in a single query
+                let profilesResponse: [ProfileResponse] = try await SupabaseManager.shared.client
+                    .from("profiles")
+                    .select()
+                    .in("id", values: uniqueUserIds)
+                    .execute()
+                    .value
+
+                print("✅ Fetched \(profilesResponse.count) profiles")
+
+                // Create a dictionary for fast profile lookup
+                var profilesDict: [UUID: Profile] = [:]
+                for p in profilesResponse {
+                    profilesDict[p.id] = Profile(
+                        id: p.id,
+                        username: p.username,
+                        fullName: p.fullName,
+                        avatarUrl: p.avatarUrl,
+                        bio: p.bio,
+                        createdAt: p.createdAt,
+                        updatedAt: p.updatedAt
+                    )
+                }
+
+                // Convert TrendingHomeResponse to Home with profiles
                 var homesWithProfiles: [Home] = []
                 for homeResponse in response {
-                    // Fetch profile for this home
-                    struct ProfileResponse: Codable {
-                        let id: UUID
-                        let username: String
-                        let fullName: String?
-                        let avatarUrl: String?
-                        let bio: String?
-                        let createdAt: Date
-                        let updatedAt: Date
-
-                        enum CodingKeys: String, CodingKey {
-                            case id
-                            case username
-                            case fullName = "full_name"
-                            case avatarUrl = "avatar_url"
-                            case bio
-                            case createdAt = "created_at"
-                            case updatedAt = "updated_at"
-                        }
-                    }
-
-                    let profileResponse: ProfileResponse? = try? await SupabaseManager.shared.client
-                        .from("profiles")
-                        .select()
-                        .eq("id", value: homeResponse.userId.uuidString)
-                        .single()
-                        .execute()
-                        .value
-
-                    let profile: Profile? = profileResponse.map { p in
-                        Profile(
-                            id: p.id,
-                            username: p.username,
-                            fullName: p.fullName,
-                            avatarUrl: p.avatarUrl,
-                            bio: p.bio,
-                            createdAt: p.createdAt,
-                            updatedAt: p.updatedAt
-                        )
-                    }
-
                     var home = Home(
                         id: homeResponse.id,
                         userId: homeResponse.userId,
@@ -286,12 +305,19 @@ struct FeedView: View {
                         isActive: homeResponse.isActive,
                         isArchived: homeResponse.isArchived,
                         archivedAt: homeResponse.archivedAt,
+                        soldStatus: homeResponse.soldStatus,
+                        soldDate: homeResponse.soldDate,
+                        openHouseDate: homeResponse.openHouseDate,
+                        openHouseEndDate: homeResponse.openHouseEndDate,
+                        openHousePaid: homeResponse.openHousePaid,
+                        stripePaymentId: nil,
                         subscriptionId: homeResponse.subscriptionId,
                         expiresAt: homeResponse.expiresAt,
                         createdAt: homeResponse.createdAt,
                         updatedAt: homeResponse.updatedAt
                     )
-                    home.profile = profile
+                    // Look up profile from dictionary (O(1) instead of network call)
+                    home.profile = profilesDict[homeResponse.userId]
                     homesWithProfiles.append(home)
                 }
 
@@ -315,6 +341,8 @@ struct FeedView: View {
 
 struct HomePostView: View {
     let home: Home
+    let showSoldOptions: Bool
+    let preloadedUserId: UUID?
     @State private var showComments = false
     @State private var isLiked = false
     @State private var likeCount: Int
@@ -326,35 +354,92 @@ struct HomePostView: View {
     @State private var showEditPost = false
     @State private var showChat = false
     @State private var currentUserId: UUID?
+    @State private var soldStatus: String?
+    @State private var soldDate: Date?
+    @State private var hasCheckedLike = false
 
     // User-generated pricing feature
     @State private var upVoted = false
     @State private var downVoted = false
     @State private var estimatedPrice: Int
 
-    init(home: Home) {
+    init(home: Home, showSoldOptions: Bool = false, preloadedUserId: UUID? = nil) {
         self.home = home
+        self.showSoldOptions = showSoldOptions
+        self.preloadedUserId = preloadedUserId
         _likeCount = State(initialValue: home.likesCount)
         _estimatedPrice = State(initialValue: NSDecimalNumber(decimal: home.price ?? 0).intValue)
+        _soldStatus = State(initialValue: home.soldStatus)
+        _soldDate = State(initialValue: home.soldDate)
+        _currentUserId = State(initialValue: preloadedUserId)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header with user info
             HStack {
-                Circle()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 32, height: 32)
-                    .overlay(
-                        Image(systemName: "person.fill")
-                            .font(.caption)
-                            .foregroundColor(.white)
-                    )
+                // Profile photo
+                if let avatarUrl = home.profile?.avatarUrl, !avatarUrl.isEmpty, let url = URL(string: avatarUrl) {
+                    // Add timestamp to prevent caching
+                    let urlWithCache = URL(string: "\(avatarUrl)?t=\(Date().timeIntervalSince1970)")
+                    AsyncImage(url: urlWithCache ?? url) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 32, height: 32)
+                            .clipShape(Circle())
+                    } placeholder: {
+                        Circle()
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(width: 32, height: 32)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.white)
+                            )
+                    }
+                } else {
+                    Circle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 32, height: 32)
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                        )
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(home.profile?.username ?? "User")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                    HStack(spacing: 6) {
+                        Text(home.profile?.username ?? "User")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+
+                        // Sold/Leased badge
+                        if let status = soldStatus {
+                            Text(status.uppercased())
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(status == "sold" ? Color.red : Color.blue)
+                                .cornerRadius(4)
+                        }
+
+                        // Open House badge (gold) - only show if date hasn't passed
+                        if let openHouseDate = home.openHouseDate, home.openHousePaid == true {
+                            let endDate = home.openHouseEndDate ?? openHouseDate.addingTimeInterval(7200) // Default 2 hours
+                            if endDate > Date() {
+                                Text("OPEN HOUSE")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color(red: 1.0, green: 0.84, blue: 0.0)) // Gold
+                                    .cornerRadius(4)
+                            }
+                        }
+                    }
 
                     // Show address, city format (e.g., "123 Main St, San Francisco")
                     if let address = home.address, !address.isEmpty, let city = home.city {
@@ -366,6 +451,23 @@ struct HomePostView: View {
                         Text("\(city), \(state)")
                             .font(.caption)
                             .foregroundColor(.gray)
+                    }
+
+                    // Show sold/leased date
+                    if let status = soldStatus, let date = soldDate {
+                        Text("\(status == "sold" ? "Sold" : "Leased") on \(formatDate(date))")
+                            .font(.system(size: 11))
+                            .foregroundColor(.gray)
+                    }
+
+                    // Show open house date/time - only if hasn't expired
+                    if let openHouseDate = home.openHouseDate, home.openHousePaid == true {
+                        let endDate = home.openHouseEndDate ?? openHouseDate.addingTimeInterval(7200)
+                        if endDate > Date() {
+                            Text("Open House: \(formatOpenHouse(date: openHouseDate, endDate: home.openHouseEndDate))")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
+                        }
                     }
                 }
 
@@ -629,12 +731,33 @@ struct HomePostView: View {
             }
         }
         .onAppear {
-            loadCurrentUserId()
+            // Only load user ID if not preloaded
+            if currentUserId == nil {
+                loadCurrentUserId()
+            }
         }
         .confirmationDialog("Post Options", isPresented: $showMenu, titleVisibility: .hidden) {
             Button("Edit Post") {
                 showEditPost = true
             }
+
+            // Show sold/leased options only in profile view
+            if showSoldOptions && soldStatus == nil {
+                Button("Mark as Leased") {
+                    markAsSoldOrLeased(status: "leased")
+                }
+                Button("Mark as Sold") {
+                    markAsSoldOrLeased(status: "sold")
+                }
+            }
+
+            // Option to remove sold/leased status
+            if showSoldOptions && soldStatus != nil {
+                Button("Remove \(soldStatus?.capitalized ?? "") Status") {
+                    removeSoldStatus()
+                }
+            }
+
             Button("Delete Post", role: .destructive) {
                 showDeleteAlert = true
             }
@@ -651,12 +774,14 @@ struct HomePostView: View {
         } message: {
             Text("Are you sure you want to delete this post? This action cannot be undone.")
         }
-        .onAppear {
-            checkIfLiked()
-        }
     }
 
     func checkIfLiked() {
+        // Skip if already checked
+        if hasCheckedLike {
+            return
+        }
+        hasCheckedLike = true
         Task {
             do {
                 let userId = try await SupabaseManager.shared.client.auth.session.user.id
@@ -697,6 +822,12 @@ struct HomePostView: View {
 
     func toggleLike() {
         print("🔄 Toggle like called - current state: \(isLiked)")
+
+        // Check like status on first interaction if not already checked
+        if !hasCheckedLike {
+            checkIfLiked()
+        }
+
         isLiked.toggle()
         likeCount += isLiked ? 1 : -1
 
@@ -819,6 +950,108 @@ struct HomePostView: View {
                 print("❌ Error deleting post: \(error)")
             }
         }
+    }
+
+    func markAsSoldOrLeased(status: String) {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                // Check if user owns this post
+                if home.userId != userId {
+                    print("❌ User does not own this post")
+                    return
+                }
+
+                struct SoldStatusUpdate: Encodable {
+                    let sold_status: String
+                    let sold_date: Date
+                }
+
+                let update = SoldStatusUpdate(
+                    sold_status: status,
+                    sold_date: Date()
+                )
+
+                try await SupabaseManager.shared.client
+                    .from("homes")
+                    .update(update)
+                    .eq("id", value: home.id.uuidString)
+                    .execute()
+
+                // Update local state
+                soldStatus = status
+                soldDate = Date()
+
+                print("✅ Post marked as \(status)")
+
+                // Post notification to refresh profile
+                NotificationCenter.default.post(name: NSNotification.Name("RefreshProfile"), object: nil)
+            } catch {
+                print("❌ Error marking post as \(status): \(error)")
+            }
+        }
+    }
+
+    func removeSoldStatus() {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                // Check if user owns this post
+                if home.userId != userId {
+                    print("❌ User does not own this post")
+                    return
+                }
+
+                struct SoldStatusUpdate: Encodable {
+                    let sold_status: String?
+                    let sold_date: Date?
+                }
+
+                let update = SoldStatusUpdate(
+                    sold_status: nil,
+                    sold_date: nil
+                )
+
+                try await SupabaseManager.shared.client
+                    .from("homes")
+                    .update(update)
+                    .eq("id", value: home.id.uuidString)
+                    .execute()
+
+                // Update local state
+                soldStatus = nil
+                soldDate = nil
+
+                print("✅ Sold/leased status removed")
+
+                // Post notification to refresh profile
+                NotificationCenter.default.post(name: NSNotification.Name("RefreshProfile"), object: nil)
+            } catch {
+                print("❌ Error removing sold status: \(error)")
+            }
+        }
+    }
+
+    func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+
+    func formatOpenHouse(date: Date, endDate: Date?) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d 'at' h:mm a"
+        var result = formatter.string(from: date)
+
+        if let end = endDate {
+            let endFormatter = DateFormatter()
+            endFormatter.dateFormat = "h:mm a"
+            result += " - \(endFormatter.string(from: end))"
+        }
+
+        return result
     }
 
     // Format price with commas (Int version for estimator)

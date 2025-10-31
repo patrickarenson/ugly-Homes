@@ -116,9 +116,7 @@ struct LocationFeedView: View {
                 } else {
                     // List view
                     ZStack {
-                        if isLoading {
-                            ProgressView()
-                        } else if filteredHomes.isEmpty {
+                        if filteredHomes.isEmpty {
                             VStack(spacing: 20) {
                                 Image(systemName: searchText.isEmpty ? "map.slash" : "magnifyingglass")
                                     .font(.system(size: 60))

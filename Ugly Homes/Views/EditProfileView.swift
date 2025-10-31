@@ -15,17 +15,18 @@ struct EditProfileView: View {
     @State private var username: String
     @State private var fullName: String
     @State private var bio: String
+    @State private var market: String
     @State private var selectedImage: PhotosPickerItem?
     @State private var profileImageData: Data?
     @State private var isUploading = false
     @State private var errorMessage = ""
-    @State private var debugMessage = ""
 
     init(profile: Profile) {
         self.currentProfile = profile
         _username = State(initialValue: profile.username)
         _fullName = State(initialValue: profile.fullName ?? "")
         _bio = State(initialValue: profile.bio ?? "")
+        _market = State(initialValue: profile.market ?? "")
     }
 
     var body: some View {
@@ -60,25 +61,37 @@ struct EditProfileView: View {
                                     defaultProfileImage
                                 }
 
-                                // Edit icon overlay
-                                Circle()
-                                    .fill(Color.black.opacity(0.5))
-                                    .frame(width: 100, height: 100)
-                                    .overlay(
-                                        Image(systemName: "camera.fill")
-                                            .foregroundColor(.white)
-                                            .font(.title2)
-                                    )
+                                // Show loading indicator during upload
+                                if isUploading && profileImageData != nil {
+                                    Circle()
+                                        .fill(Color.black.opacity(0.7))
+                                        .frame(width: 100, height: 100)
+                                        .overlay(
+                                            VStack(spacing: 8) {
+                                                ProgressView()
+                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                Text("Uploading...")
+                                                    .font(.caption)
+                                                    .foregroundColor(.white)
+                                            }
+                                        )
+                                } else {
+                                    // Edit icon overlay
+                                    Circle()
+                                        .fill(Color.black.opacity(0.5))
+                                        .frame(width: 100, height: 100)
+                                        .overlay(
+                                            Image(systemName: "camera.fill")
+                                                .foregroundColor(.white)
+                                                .font(.title2)
+                                        )
+                                }
                             }
                         }
                         .onChange(of: selectedImage) { oldValue, newValue in
                             Task {
-                                debugMessage = "Loading photo..."
                                 if let data = try? await newValue?.loadTransferable(type: Data.self) {
                                     profileImageData = data
-                                    debugMessage = "Photo loaded: \(data.count) bytes"
-                                } else {
-                                    debugMessage = "Failed to load photo"
                                 }
                             }
                         }
@@ -128,15 +141,24 @@ struct EditProfileView: View {
                             }
                     }
 
+                    // Market (optional)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Market/Location")
+                                .font(.system(size: 15, weight: .medium))
+                            Text("(Optional)")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                        TextField("e.g., Miami, FL", text: $market)
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(8)
+                    }
+
                     if !errorMessage.isEmpty {
                         Text(errorMessage)
                             .foregroundColor(.red)
-                            .font(.caption)
-                    }
-
-                    if !debugMessage.isEmpty {
-                        Text(debugMessage)
-                            .foregroundColor(.blue)
                             .font(.caption)
                     }
 
@@ -185,8 +207,6 @@ struct EditProfileView: View {
     }
 
     func saveProfile() {
-        debugMessage = "Starting save..."
-
         guard !username.isEmpty else {
             errorMessage = "Username is required"
             return
@@ -198,7 +218,6 @@ struct EditProfileView: View {
         Task {
             do {
                 let userId = try await SupabaseManager.shared.client.auth.session.user.id
-                debugMessage = "Got user ID"
 
                 // Check if username is already taken (if changed)
                 if username != currentProfile.username {
@@ -220,7 +239,6 @@ struct EditProfileView: View {
 
                 // Upload profile image if selected (skip if fails)
                 if let imageData = profileImageData {
-                    debugMessage = "Uploading photo (\(imageData.count) bytes)..."
                     let fileName = "\(userId.uuidString)-profile.jpg"
 
                     // Try to upload, but continue even if it fails
@@ -242,14 +260,10 @@ struct EditProfileView: View {
                             .getPublicURL(path: fileName)
 
                         avatarUrl = publicURL.absoluteString
-                        debugMessage = "Photo uploaded! URL: \(avatarUrl!)"
                     } catch let uploadError {
-                        debugMessage = "Upload failed: \(uploadError.localizedDescription)"
                         errorMessage = "Photo upload failed: \(uploadError.localizedDescription)"
                         // Don't stop - just skip the avatar update
                     }
-                } else {
-                    debugMessage = "No photo selected to upload"
                 }
 
                 // Update profile in database
@@ -257,6 +271,7 @@ struct EditProfileView: View {
                     let username: String
                     let full_name: String?
                     let bio: String?
+                    let market: String?
                     let avatar_url: String?
                 }
 
@@ -266,10 +281,9 @@ struct EditProfileView: View {
                     username: username,
                     full_name: fullName.isEmpty ? nil : fullName,
                     bio: bio.isEmpty ? nil : bio,
+                    market: market.isEmpty ? nil : market,
                     avatar_url: finalAvatarUrl
                 )
-
-                debugMessage = "Saving to database..."
 
                 try await SupabaseManager.shared.client
                     .from("profiles")
@@ -277,7 +291,6 @@ struct EditProfileView: View {
                     .eq("id", value: userId.uuidString)
                     .execute()
 
-                debugMessage = "✅ Profile saved! Avatar: \(finalAvatarUrl != nil ? "YES" : "NO")"
                 isUploading = false
 
                 // Notify to refresh

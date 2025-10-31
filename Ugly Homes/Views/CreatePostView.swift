@@ -31,6 +31,14 @@ struct CreatePostView: View {
     @State private var isImporting = false
     @State private var errorMessage = ""
 
+    // Open House feature
+    @State private var enableOpenHouse = false
+    @State private var openHouseDate = Date().addingTimeInterval(86400) // Default tomorrow
+    @State private var openHouseEndDate = Date().addingTimeInterval(86400 + 7200) // Default +2 hours
+    @State private var hasOpenHousePaid = false
+    @State private var stripePaymentId: String?
+    @State private var showPaymentSheet = false
+
     enum ListingType: String, CaseIterable {
         case sale = "For Sale"
         case rental = "For Rent"
@@ -461,6 +469,78 @@ struct CreatePostView: View {
                         }
                     }
 
+                    // Open House Section (only when creating new property)
+                    if editingHome == nil {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Divider()
+                                .padding(.vertical, 8)
+
+                            HStack {
+                                Image(systemName: "house.fill")
+                                    .foregroundColor(.orange)
+                                Text("Open House Feature")
+                                    .font(.headline)
+                                Spacer()
+                                Text("$5")
+                                    .font(.headline)
+                                    .foregroundColor(.orange)
+                            }
+
+                            Text("Add a gold 'OPEN HOUSE' badge to your listing with the date and time")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            Toggle("Enable Open House", isOn: $enableOpenHouse)
+                                .tint(.orange)
+
+                            if enableOpenHouse {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    DatePicker("Start Date & Time", selection: $openHouseDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                                        .datePickerStyle(.compact)
+
+                                    DatePicker("End Date & Time", selection: $openHouseEndDate, in: openHouseDate..., displayedComponents: [.date, .hourAndMinute])
+                                        .datePickerStyle(.compact)
+
+                                    if !hasOpenHousePaid {
+                                        Button(action: processOpenHousePayment) {
+                                            HStack {
+                                                Image(systemName: "creditcard.fill")
+                                                Text("Pay $5 via Apple Pay")
+                                                    .fontWeight(.semibold)
+                                            }
+                                            .foregroundColor(.white)
+                                            .frame(maxWidth: .infinity)
+                                            .padding()
+                                            .background(Color.orange)
+                                            .cornerRadius(10)
+                                        }
+
+                                        // Show error if payment fails
+                                        if !errorMessage.isEmpty && errorMessage.contains("Payment") {
+                                            Text(errorMessage)
+                                                .font(.caption)
+                                                .foregroundColor(.red)
+                                                .padding(.top, 4)
+                                        }
+                                    } else {
+                                        HStack {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                            Text("Open House Paid - Badge will appear on your post!")
+                                                .font(.subheadline)
+                                                .foregroundColor(.green)
+                                        }
+                                        .padding()
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.green.opacity(0.1))
+                                        .cornerRadius(8)
+                                    }
+                                }
+                                .padding(.leading, 8)
+                            }
+                        }
+                    }
+
                     // Post button
                     Button(action: editingHome == nil ? createPost : updatePost) {
                         if isUploading {
@@ -693,6 +773,10 @@ struct CreatePostView: View {
                     let zip_code: String?
                     let image_urls: [String]
                     let is_active: Bool
+                    let open_house_date: Date?
+                    let open_house_end_date: Date?
+                    let open_house_paid: Bool?
+                    let stripe_payment_id: String?
                 }
 
                 let newHome = NewHome(
@@ -708,7 +792,11 @@ struct CreatePostView: View {
                     state: state.isEmpty ? nil : state,
                     zip_code: zipCode.isEmpty ? nil : zipCode,
                     image_urls: finalImageUrls,
-                    is_active: true
+                    is_active: true,
+                    open_house_date: (enableOpenHouse && hasOpenHousePaid) ? openHouseDate : nil,
+                    open_house_end_date: (enableOpenHouse && hasOpenHousePaid) ? openHouseEndDate : nil,
+                    open_house_paid: (enableOpenHouse && hasOpenHousePaid) ? true : nil,
+                    stripe_payment_id: (enableOpenHouse && hasOpenHousePaid) ? stripePaymentId : nil
                 )
 
                 try await SupabaseManager.shared.client
@@ -816,6 +904,35 @@ struct CreatePostView: View {
                 isUploading = false
                 print("❌ Error updating post: \(error)")
                 errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func processOpenHousePayment() {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                print("💳 Processing Open House payment...")
+
+                // Call StripeManager to handle payment
+                StripeManager.shared.processOpenHousePayment(userId: userId.uuidString, homeId: "new") { result in
+                    DispatchQueue.main.async {
+                        switch result {
+                        case .success(let paymentIntentId):
+                            print("✅ Payment successful!")
+                            self.hasOpenHousePaid = true
+                            self.stripePaymentId = paymentIntentId
+                        case .failure(let error):
+                            print("❌ Payment failed: \(error.localizedDescription)")
+                            self.errorMessage = "Payment failed: \(error.localizedDescription)"
+                        }
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Authentication error: \(error.localizedDescription)"
+                }
             }
         }
     }

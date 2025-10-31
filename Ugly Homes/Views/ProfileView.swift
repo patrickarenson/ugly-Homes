@@ -13,6 +13,9 @@ struct ProfileView: View {
     @State private var isLoading = false
     @State private var showEditProfile = false
     @State private var showAccountSettings = false
+    @State private var selectedHome: Home?
+    @State private var showPostDetail = false
+    @State private var currentUserId: UUID?
 
     var body: some View {
         NavigationView {
@@ -54,8 +57,19 @@ struct ProfileView: View {
                             }
 
                             Text(profile.username)
-                                .font(.title2)
-                                .fontWeight(.bold)
+                                .font(.title3)
+                                .fontWeight(.semibold)
+
+                            if let market = profile.market, !market.isEmpty {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "mappin.circle.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                    Text(market)
+                                        .font(.subheadline)
+                                        .foregroundColor(.gray)
+                                }
+                            }
 
                             if let bio = profile.bio {
                                 Text(bio)
@@ -67,39 +81,51 @@ struct ProfileView: View {
                         }
                         .padding(.top, 20)
 
-                        // Stats
+                        // Stats - Modern, compact single row
                         HStack(spacing: 0) {
-                            VStack(spacing: 4) {
+                            VStack(spacing: 3) {
                                 Text("\(userHomes.count)")
-                                    .font(.title2)
-                                    .fontWeight(.bold)
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.primary)
                                 Text("Posts")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
                             }
                             .frame(maxWidth: .infinity)
 
-                            VStack(spacing: 4) {
-                                Text("\(userHomes.reduce(0) { $0 + $1.likesCount })")
-                                    .font(.title2)
-                                    .fontWeight(.bold)
-                                Text("Likes")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
+                            VStack(spacing: 3) {
+                                Text("\(userHomes.filter { $0.soldStatus == "sold" }.count)")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                Text("Sold")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
                             }
                             .frame(maxWidth: .infinity)
 
-                            VStack(spacing: 4) {
-                                Text("\(userHomes.reduce(0) { $0 + $1.commentsCount })")
-                                    .font(.title2)
-                                    .fontWeight(.bold)
-                                Text("Comments")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
+                            VStack(spacing: 3) {
+                                Text("\(userHomes.filter { $0.soldStatus == "leased" }.count)")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                Text("Leased")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+
+                            VStack(spacing: 3) {
+                                let ranking = calculateRanking(homes: userHomes)
+                                Text(ranking.text)
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(ranking.color)
+                                Text("Rank")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
                             }
                             .frame(maxWidth: .infinity)
                         }
                         .padding(.horizontal)
+                        .padding(.vertical, 8)
 
                         Divider()
 
@@ -122,23 +148,48 @@ struct ProfileView: View {
                             ], spacing: 2) {
                                 ForEach(userHomes) { home in
                                     if let imageUrl = home.imageUrls.first {
-                                        AsyncImage(url: URL(string: imageUrl)) { image in
-                                            image
-                                                .resizable()
-                                                .aspectRatio(1, contentMode: .fill)
-                                        } placeholder: {
-                                            Rectangle()
-                                                .fill(Color.gray.opacity(0.2))
-                                                .aspectRatio(1, contentMode: .fill)
+                                        ZStack(alignment: .topTrailing) {
+                                            AsyncImage(url: URL(string: imageUrl)) { image in
+                                                image
+                                                    .resizable()
+                                                    .aspectRatio(1, contentMode: .fill)
+                                            } placeholder: {
+                                                Rectangle()
+                                                    .fill(Color.gray.opacity(0.2))
+                                                    .aspectRatio(1, contentMode: .fill)
+                                            }
+                                            .clipped()
+
+                                            // Sold/Leased badge overlay
+                                            if let soldStatus = home.soldStatus {
+                                                Text(soldStatus.uppercased())
+                                                    .font(.system(size: 9, weight: .bold))
+                                                    .foregroundColor(.white)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 3)
+                                                    .background(soldStatus == "sold" ? Color.red : Color.blue)
+                                                    .cornerRadius(4)
+                                                    .padding(4)
+                                            }
                                         }
-                                        .clipped()
+                                        .onTapGesture {
+                                            selectedHome = home
+                                            showPostDetail = true
+                                        }
                                     }
                                 }
                             }
                         }
                     } else {
-                        ProgressView()
-                            .padding(.top, 100)
+                        VStack(spacing: 20) {
+                            Image(systemName: "person.crop.circle")
+                                .font(.system(size: 60))
+                                .foregroundColor(.gray)
+                            Text("Loading profile...")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                        }
+                        .padding(.top, 100)
                     }
                 }
             }
@@ -178,6 +229,23 @@ struct ProfileView: View {
             .sheet(isPresented: $showAccountSettings) {
                 AccountSettingsView()
             }
+            .sheet(isPresented: $showPostDetail) {
+                if let home = selectedHome {
+                    NavigationView {
+                        ScrollView {
+                            HomePostView(home: home, showSoldOptions: true, preloadedUserId: currentUserId)
+                        }
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarLeading) {
+                                Button("Close") {
+                                    showPostDetail = false
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             .onAppear {
                 loadProfile()
 
@@ -199,6 +267,7 @@ struct ProfileView: View {
         Task {
             do {
                 let userId = try await SupabaseManager.shared.client.auth.session.user.id
+                currentUserId = userId
                 print("📥 Loading profile for user: \(userId)")
 
                 // Load profile
@@ -239,7 +308,40 @@ struct ProfileView: View {
             NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
         }
     }
+
+    func calculateRanking(homes: [Home]) -> (text: String, color: Color) {
+        // Get current year
+        let calendar = Calendar.current
+        let currentYear = calendar.component(.year, from: Date())
+
+        // Count only deals closed THIS YEAR (keeps competition fresh annually)
+        let dealsThisYear = homes.filter { home in
+            guard let soldDate = home.soldDate else { return false }
+            let dealYear = calendar.component(.year, from: soldDate)
+            return dealYear == currentYear && home.soldStatus != nil
+        }.count
+
+        // Competitive ranking algorithm with color coding
+        // Resets every year to keep agents grinding!
+        if dealsThisYear >= 10 {
+            return ("5%", Color(red: 1.0, green: 0.84, blue: 0.0)) // Gold
+        } else if dealsThisYear >= 7 {
+            return ("10%", Color.green)
+        } else if dealsThisYear >= 5 {
+            return ("15%", Color.blue)
+        } else if dealsThisYear >= 3 {
+            return ("25%", Color.purple)
+        } else if dealsThisYear >= 1 {
+            return ("50%", Color.orange)
+        } else {
+            return ("75%", Color.gray)
+        }
+
+        // Future enhancement: Compare against actual users in same market
+        // Can query database for market-based competitive rankings
+    }
 }
+
 
 #Preview {
     ProfileView()

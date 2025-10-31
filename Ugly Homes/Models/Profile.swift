@@ -13,6 +13,7 @@ struct Profile: Codable, Identifiable {
     var fullName: String?
     var avatarUrl: String?
     var bio: String?
+    var market: String?
     let createdAt: Date
     let updatedAt: Date
 
@@ -22,6 +23,7 @@ struct Profile: Codable, Identifiable {
         case fullName = "full_name"
         case avatarUrl = "avatar_url"
         case bio
+        case market
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }

@@ -28,6 +28,12 @@ struct MainTabView: View {
                         .padding(.top, 10)
                 }
 
+            MessagesView()
+                .tabItem {
+                    Image(systemName: "message.fill")
+                        .padding(.top, 10)
+                }
+
             ProfileView()
                 .tabItem {
                     Image(systemName: "person.circle.fill")

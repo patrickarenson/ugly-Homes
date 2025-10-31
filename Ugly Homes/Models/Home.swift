@@ -23,6 +23,9 @@ struct Home: Codable, Identifiable {
     var imageUrls: [String]
     var likesCount: Int
     var commentsCount: Int
+    var viewCount: Int?
+    var shareCount: Int?
+    var saveCount: Int?
     var isActive: Bool
     var isArchived: Bool?
     var archivedAt: Date?
@@ -50,6 +53,9 @@ struct Home: Codable, Identifiable {
         case imageUrls = "image_urls"
         case likesCount = "likes_count"
         case commentsCount = "comments_count"
+        case viewCount = "view_count"
+        case shareCount = "share_count"
+        case saveCount = "save_count"
         case isActive = "is_active"
         case isArchived = "is_archived"
         case archivedAt = "archived_at"

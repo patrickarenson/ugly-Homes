@@ -37,6 +37,9 @@ struct PriceFeedView: View {
                 if let state = home.state, state.lowercased().contains(searchText.lowercased()) {
                     return true
                 }
+                if let zipCode = home.zipCode, zipCode.contains(searchText) {
+                    return true
+                }
                 return false
             }
         }
@@ -122,6 +125,9 @@ struct PriceFeedView: View {
                 }
             }
             .navigationBarHidden(true)
+            .onTapGesture {
+                hideKeyboard()
+            }
             .sheet(isPresented: $showCreatePost) {
                 CreatePostView()
             }
@@ -137,6 +143,10 @@ struct PriceFeedView: View {
                 loadHomes()
             }
         }
+    }
+
+    func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     func loadHomes() {

@@ -35,6 +35,10 @@ struct FeedView: View {
                 if let state = home.state, state.lowercased().contains(searchText.lowercased()) {
                     return true
                 }
+                // Search by zip code
+                if let zipCode = home.zipCode, zipCode.contains(searchText) {
+                    return true
+                }
                 return false
             }
         }
@@ -114,6 +118,9 @@ struct FeedView: View {
                 }
             }
             .navigationBarHidden(true)
+            .onTapGesture {
+                hideKeyboard()
+            }
             .sheet(isPresented: $showCreatePost) {
                 CreatePostView()
             }
@@ -132,27 +139,174 @@ struct FeedView: View {
         }
     }
 
+    func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+
     func loadHomes() {
         isLoading = true
 
         Task {
             do {
-                print("📥 Loading trending homes...")
-                let response: [Home] = try await SupabaseManager.shared.client
-                    .from("homes")
-                    .select("*, profile:user_id(*)")
-                    .eq("is_active", value: true)
-                    .eq("is_archived", value: false)
-                    .order("created_at", ascending: false)
+                print("📥 Loading trending homes with algorithm...")
+
+                // Get current user ID
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+                print("👤 Current user ID: \(userId)")
+
+                // Call the get_trending_homes RPC function
+                struct TrendingHomeResponse: Codable {
+                    let id: UUID
+                    let userId: UUID
+                    let title: String
+                    let listingType: String?
+                    let description: String?
+                    let price: Decimal?
+                    let address: String?
+                    let city: String?
+                    let state: String?
+                    let zipCode: String?
+                    let bedrooms: Int?
+                    let bathrooms: Decimal?
+                    let imageUrls: [String]
+                    let likesCount: Int
+                    let commentsCount: Int
+                    let viewCount: Int?
+                    let shareCount: Int?
+                    let saveCount: Int?
+                    let isActive: Bool
+                    let isArchived: Bool?
+                    let archivedAt: Date?
+                    let subscriptionId: String?
+                    let expiresAt: Date?
+                    let createdAt: Date
+                    let updatedAt: Date
+                    let trendingScore: Decimal
+
+                    enum CodingKeys: String, CodingKey {
+                        case id
+                        case userId = "user_id"
+                        case title
+                        case listingType = "listing_type"
+                        case description
+                        case price
+                        case address
+                        case city
+                        case state
+                        case zipCode = "zip_code"
+                        case bedrooms
+                        case bathrooms
+                        case imageUrls = "image_urls"
+                        case likesCount = "likes_count"
+                        case commentsCount = "comments_count"
+                        case viewCount = "view_count"
+                        case shareCount = "share_count"
+                        case saveCount = "save_count"
+                        case isActive = "is_active"
+                        case isArchived = "is_archived"
+                        case archivedAt = "archived_at"
+                        case subscriptionId = "subscription_id"
+                        case expiresAt = "expires_at"
+                        case createdAt = "created_at"
+                        case updatedAt = "updated_at"
+                        case trendingScore = "trending_score"
+                    }
+                }
+
+                let response: [TrendingHomeResponse] = try await SupabaseManager.shared.client
+                    .rpc("get_trending_homes", params: ["current_user_id": userId.uuidString])
                     .execute()
                     .value
 
-                print("✅ Loaded \(response.count) homes")
-                homes = response
-                allHomes = response
+                print("✅ Loaded \(response.count) trending homes")
+
+                // Convert TrendingHomeResponse to Home and fetch profiles
+                var homesWithProfiles: [Home] = []
+                for homeResponse in response {
+                    // Fetch profile for this home
+                    struct ProfileResponse: Codable {
+                        let id: UUID
+                        let username: String
+                        let fullName: String?
+                        let avatarUrl: String?
+                        let bio: String?
+                        let createdAt: Date
+                        let updatedAt: Date
+
+                        enum CodingKeys: String, CodingKey {
+                            case id
+                            case username
+                            case fullName = "full_name"
+                            case avatarUrl = "avatar_url"
+                            case bio
+                            case createdAt = "created_at"
+                            case updatedAt = "updated_at"
+                        }
+                    }
+
+                    let profileResponse: ProfileResponse? = try? await SupabaseManager.shared.client
+                        .from("profiles")
+                        .select()
+                        .eq("id", value: homeResponse.userId.uuidString)
+                        .single()
+                        .execute()
+                        .value
+
+                    let profile: Profile? = profileResponse.map { p in
+                        Profile(
+                            id: p.id,
+                            username: p.username,
+                            fullName: p.fullName,
+                            avatarUrl: p.avatarUrl,
+                            bio: p.bio,
+                            createdAt: p.createdAt,
+                            updatedAt: p.updatedAt
+                        )
+                    }
+
+                    var home = Home(
+                        id: homeResponse.id,
+                        userId: homeResponse.userId,
+                        title: homeResponse.title,
+                        listingType: homeResponse.listingType,
+                        description: homeResponse.description,
+                        price: homeResponse.price,
+                        address: homeResponse.address,
+                        city: homeResponse.city,
+                        state: homeResponse.state,
+                        zipCode: homeResponse.zipCode,
+                        bedrooms: homeResponse.bedrooms,
+                        bathrooms: homeResponse.bathrooms,
+                        imageUrls: homeResponse.imageUrls,
+                        likesCount: homeResponse.likesCount,
+                        commentsCount: homeResponse.commentsCount,
+                        viewCount: homeResponse.viewCount,
+                        shareCount: homeResponse.shareCount,
+                        saveCount: homeResponse.saveCount,
+                        isActive: homeResponse.isActive,
+                        isArchived: homeResponse.isArchived,
+                        archivedAt: homeResponse.archivedAt,
+                        subscriptionId: homeResponse.subscriptionId,
+                        expiresAt: homeResponse.expiresAt,
+                        createdAt: homeResponse.createdAt,
+                        updatedAt: homeResponse.updatedAt
+                    )
+                    home.profile = profile
+                    homesWithProfiles.append(home)
+                }
+
+                homes = homesWithProfiles
+                allHomes = homesWithProfiles
+
+                // Print trending scores for debugging
+                for (index, homeResponse) in response.prefix(5).enumerated() {
+                    print("📊 #\(index + 1): \(homeResponse.title) - Score: \(homeResponse.trendingScore)")
+                }
+
                 isLoading = false
             } catch {
-                print("❌ Error loading homes: \(error)")
+                print("❌ Error loading trending homes: \(error)")
+                print("❌ Error details: \(error.localizedDescription)")
                 isLoading = false
             }
         }
@@ -170,6 +324,8 @@ struct HomePostView: View {
     @State private var showDeleteAlert = false
     @State private var showHeartAnimation = false
     @State private var showEditPost = false
+    @State private var showChat = false
+    @State private var currentUserId: UUID?
 
     // User-generated pricing feature
     @State private var upVoted = false
@@ -342,6 +498,16 @@ struct HomePostView: View {
                         .font(.title3)
                 }
 
+                // Message button (only show if not own post)
+                if let profile = home.profile, let currentId = currentUserId, profile.id != currentId {
+                    Button(action: {
+                        showChat = true
+                    }) {
+                        Image(systemName: "message")
+                            .font(.title3)
+                    }
+                }
+
                 Spacer()
 
                 // User-Generated Pricing Feature - Right Side
@@ -360,9 +526,10 @@ struct HomePostView: View {
                         }
                         .disabled(upVoted)
 
-                        // Estimated price in orange
-                        Text("$\(estimatedPrice)")
+                        // Estimated price in orange (bold with commas)
+                        Text(formatPrice(estimatedPrice))
                             .font(.subheadline)
+                            .fontWeight(.bold)
                             .foregroundColor(.orange)
 
                         // Down arrow button
@@ -382,7 +549,8 @@ struct HomePostView: View {
             }
             .foregroundColor(.black)
             .padding(.horizontal)
-            .padding(.vertical, 12)
+            .padding(.top, 20)
+            .padding(.bottom, 8)
 
             // Caption
             HStack(alignment: .top) {
@@ -418,7 +586,7 @@ struct HomePostView: View {
                 }
 
                 if let price = home.price {
-                    Text("$\(price)")
+                    Text(formatPriceFromDecimal(price))
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.primary)
                 }
@@ -450,6 +618,18 @@ struct HomePostView: View {
             CommentsView(home: home)
                 .presentationDetents([.height(UIScreen.main.bounds.height * 0.67)])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showChat) {
+            if let profile = home.profile {
+                ChatView(
+                    otherUserId: profile.id,
+                    otherUsername: profile.username,
+                    otherAvatarUrl: profile.avatarUrl
+                )
+            }
+        }
+        .onAppear {
+            loadCurrentUserId()
         }
         .confirmationDialog("Post Options", isPresented: $showMenu, titleVisibility: .hidden) {
             Button("Edit Post") {
@@ -561,6 +741,26 @@ struct HomePostView: View {
     }
 
     func shareHome() {
+        // Track share in database
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                struct NewShare: Encodable {
+                    let home_id: String
+                    let user_id: String
+                }
+
+                try await SupabaseManager.shared.client
+                    .from("shares")
+                    .insert(NewShare(home_id: home.id.uuidString, user_id: userId.uuidString))
+                    .execute()
+                print("✅ Share tracked successfully")
+            } catch {
+                print("❌ Error tracking share: \(error)")
+            }
+        }
+
         let message = """
         Check out this home on Ugly Homes!
 
@@ -578,6 +778,17 @@ struct HomePostView: View {
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
            let rootVC = windowScene.windows.first?.rootViewController {
             rootVC.present(activityVC, animated: true)
+        }
+    }
+
+    func loadCurrentUserId() {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+                currentUserId = userId
+            } catch {
+                print("❌ Error loading current user ID: \(error)")
+            }
         }
     }
 
@@ -608,6 +819,24 @@ struct HomePostView: View {
                 print("❌ Error deleting post: \(error)")
             }
         }
+    }
+
+    // Format price with commas (Int version for estimator)
+    func formatPrice(_ price: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        return "$" + (formatter.string(from: NSNumber(value: price)) ?? "\(price)")
+    }
+
+    // Format price with commas (Decimal version for list price)
+    func formatPriceFromDecimal(_ price: Decimal) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.maximumFractionDigits = 0
+        let nsDecimal = NSDecimalNumber(decimal: price)
+        return "$" + (formatter.string(from: nsDecimal) ?? "\(price)")
     }
 }
 

@@ -11,6 +11,8 @@ struct ProfileView: View {
     @State private var profile: Profile?
     @State private var userHomes: [Home] = []
     @State private var isLoading = false
+    @State private var showEditProfile = false
+    @State private var showAccountSettings = false
 
     var body: some View {
         NavigationView {
@@ -19,14 +21,37 @@ struct ProfileView: View {
                     if let profile = profile {
                         // Profile header
                         VStack(spacing: 12) {
-                            Circle()
-                                .fill(Color.gray.opacity(0.3))
-                                .frame(width: 80, height: 80)
-                                .overlay(
-                                    Image(systemName: "person.fill")
-                                        .font(.largeTitle)
-                                        .foregroundColor(.white)
-                                )
+                            // Profile photo
+                            if let avatarUrl = profile.avatarUrl, !avatarUrl.isEmpty, let baseUrl = URL(string: avatarUrl) {
+                                // Add timestamp to force image reload
+                                let urlWithTimestamp = URL(string: "\(avatarUrl)?t=\(Date().timeIntervalSince1970)")
+                                AsyncImage(url: urlWithTimestamp ?? baseUrl) { image in
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 80, height: 80)
+                                        .clipShape(Circle())
+                                } placeholder: {
+                                    Circle()
+                                        .fill(Color.gray.opacity(0.3))
+                                        .frame(width: 80, height: 80)
+                                        .overlay(
+                                            Image(systemName: "person.fill")
+                                                .font(.largeTitle)
+                                                .foregroundColor(.white)
+                                        )
+                                }
+                                .id(avatarUrl) // Force SwiftUI to recreate the view when URL changes
+                            } else {
+                                Circle()
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(width: 80, height: 80)
+                                    .overlay(
+                                        Image(systemName: "person.fill")
+                                            .font(.largeTitle)
+                                            .foregroundColor(.white)
+                                    )
+                            }
 
                             Text(profile.username)
                                 .font(.title2)
@@ -43,8 +68,8 @@ struct ProfileView: View {
                         .padding(.top, 20)
 
                         // Stats
-                        HStack(spacing: 40) {
-                            VStack {
+                        HStack(spacing: 0) {
+                            VStack(spacing: 4) {
                                 Text("\(userHomes.count)")
                                     .font(.title2)
                                     .fontWeight(.bold)
@@ -52,8 +77,9 @@ struct ProfileView: View {
                                     .font(.caption)
                                     .foregroundColor(.gray)
                             }
+                            .frame(maxWidth: .infinity)
 
-                            VStack {
+                            VStack(spacing: 4) {
                                 Text("\(userHomes.reduce(0) { $0 + $1.likesCount })")
                                     .font(.title2)
                                     .fontWeight(.bold)
@@ -61,8 +87,9 @@ struct ProfileView: View {
                                     .font(.caption)
                                     .foregroundColor(.gray)
                             }
+                            .frame(maxWidth: .infinity)
 
-                            VStack {
+                            VStack(spacing: 4) {
                                 Text("\(userHomes.reduce(0) { $0 + $1.commentsCount })")
                                     .font(.title2)
                                     .fontWeight(.bold)
@@ -70,8 +97,9 @@ struct ProfileView: View {
                                     .font(.caption)
                                     .foregroundColor(.gray)
                             }
+                            .frame(maxWidth: .infinity)
                         }
-                        .padding()
+                        .padding(.horizontal)
 
                         Divider()
 
@@ -120,9 +148,15 @@ struct ProfileView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button(action: {
-                            // Edit profile
+                            showEditProfile = true
                         }) {
                             Label("Edit Profile", systemImage: "pencil")
+                        }
+
+                        Button(action: {
+                            showAccountSettings = true
+                        }) {
+                            Label("Account Settings", systemImage: "gearshape")
                         }
 
                         Button(role: .destructive, action: {
@@ -136,8 +170,25 @@ struct ProfileView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showEditProfile) {
+                if let profile = profile {
+                    EditProfileView(profile: profile)
+                }
+            }
+            .sheet(isPresented: $showAccountSettings) {
+                AccountSettingsView()
+            }
             .onAppear {
                 loadProfile()
+
+                // Listen for profile refresh notifications
+                NotificationCenter.default.addObserver(
+                    forName: NSNotification.Name("RefreshProfile"),
+                    object: nil,
+                    queue: .main
+                ) { _ in
+                    loadProfile()
+                }
             }
         }
     }

@@ -23,6 +23,7 @@ struct CreatePostView: View {
     @State private var city = ""
     @State private var state = ""
     @State private var zipCode = ""
+    @State private var hideLocation = false
     @State private var selectedImages: [PhotosPickerItem] = []
     @State private var imageData: [Data] = []
     @State private var imageUrls: [String] = []
@@ -53,16 +54,30 @@ struct CreatePostView: View {
         }
     }
 
+    // Form validation - all fields mandatory except location (unless hideLocation is false)
+    var isFormValid: Bool {
+        let hasPhotos = !imageData.isEmpty || !imageUrls.isEmpty
+        let hasDescription = !description.isEmpty
+        let hasPrice = !price.isEmpty
+        let hasBedrooms = !bedrooms.isEmpty
+        let hasBathrooms = !bathrooms.isEmpty
+
+        // If location is not hidden, address is required
+        let locationValid = hideLocation || !address.isEmpty
+
+        return hasPhotos && hasDescription && hasPrice && hasBedrooms && hasBathrooms && locationValid
+    }
+
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    // URL Import Section (only show when creating new post)
+                    // URL Import Section (only show when creating new property)
                     if editingHome == nil {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Quick Import")
-                                .fontWeight(.semibold)
-                            Text("Paste a Zillow (sales) or Redfin (rentals) URL")
+                                .font(.system(size: 15, weight: .medium))
+                            Text("Paste a Zillow or Redfin URL")
                                 .font(.caption)
                                 .foregroundColor(.gray)
 
@@ -117,7 +132,7 @@ struct CreatePostView: View {
                     // Listing Type Picker
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Listing Type")
-                            .fontWeight(.semibold)
+                            .font(.system(size: 15, weight: .medium))
                         Picker("Type", selection: $listingType) {
                             ForEach(ListingType.allCases, id: \.self) { type in
                                 Text(type.rawValue).tag(type)
@@ -129,52 +144,17 @@ struct CreatePostView: View {
                     // Image picker
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Photos")
-                            .fontWeight(.semibold)
-                        Text("Select up to 10 photos")
+                            .font(.system(size: 15, weight: .medium))
+                        Text("Select up to 15 photos (at least 1 required)")
                             .font(.caption)
                             .foregroundColor(.gray)
-
-                        // Show imported images if available
-                        if !imageUrls.isEmpty {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack {
-                                    ForEach(0..<imageUrls.count, id: \.self) { index in
-                                        AsyncImage(url: URL(string: imageUrls[index])) { image in
-                                            image
-                                                .resizable()
-                                                .aspectRatio(contentMode: .fill)
-                                                .frame(width: 150, height: 150)
-                                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                                        } placeholder: {
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .fill(Color.gray.opacity(0.2))
-                                                .frame(width: 150, height: 150)
-                                                .overlay(ProgressView())
-                                        }
-                                    }
-                                }
-                            }
-                            .frame(height: 150)
-
-                            Text("\(imageUrls.count) photo\(imageUrls.count == 1 ? "" : "s") imported")
-                                .font(.caption)
-                                .foregroundColor(.green)
-
-                            Button(action: {
-                                imageUrls = []
-                            }) {
-                                Text("Clear imported photos")
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                            }
-                        }
 
                         // Photo preview and picker
                         VStack(alignment: .leading, spacing: 8) {
                             if imageUrls.isEmpty && imageData.isEmpty {
                                 PhotosPicker(
                                     selection: $selectedImages,
-                                    maxSelectionCount: 10,
+                                    maxSelectionCount: 15,
                                     matching: .images
                                 ) {
                                     RoundedRectangle(cornerRadius: 12)
@@ -193,65 +173,179 @@ struct CreatePostView: View {
                             } else {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 10) {
-                                        // Show imported URL images
+                                        // Show imported URL images with controls
                                         ForEach(0..<imageUrls.count, id: \.self) { index in
-                                            AsyncImage(url: URL(string: imageUrls[index])) { image in
-                                                image
-                                                    .resizable()
-                                                    .aspectRatio(contentMode: .fill)
-                                                    .frame(width: 150, height: 150)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                            } placeholder: {
+                                            ZStack(alignment: .topTrailing) {
+                                                AsyncImage(url: URL(string: imageUrls[index])) { image in
+                                                    image
+                                                        .resizable()
+                                                        .aspectRatio(contentMode: .fill)
+                                                        .frame(width: 150, height: 150)
+                                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                                                } placeholder: {
+                                                    RoundedRectangle(cornerRadius: 12)
+                                                        .fill(Color.gray.opacity(0.2))
+                                                        .frame(width: 150, height: 150)
+                                                        .overlay(ProgressView())
+                                                }
+
+                                                // Delete button
+                                                Button(action: {
+                                                    imageUrls.remove(at: index)
+                                                }) {
+                                                    Image(systemName: "xmark.circle.fill")
+                                                        .foregroundColor(.white)
+                                                        .background(Circle().fill(Color.black.opacity(0.6)))
+                                                        .font(.title3)
+                                                }
+                                                .padding(8)
+
+                                                // Photo number badge and reorder controls
+                                                VStack {
+                                                    Spacer()
+                                                    HStack(spacing: 4) {
+                                                        // Move left button
+                                                        if index > 0 {
+                                                            Button(action: {
+                                                                imageUrls.swapAt(index, index - 1)
+                                                            }) {
+                                                                Image(systemName: "chevron.left.circle.fill")
+                                                                    .foregroundColor(.white)
+                                                                    .background(Circle().fill(Color.orange.opacity(0.8)))
+                                                                    .font(.title3)
+                                                            }
+                                                        }
+
+                                                        Text("\(index + 1)")
+                                                            .font(.caption2)
+                                                            .fontWeight(.bold)
+                                                            .foregroundColor(.white)
+                                                            .padding(6)
+                                                            .background(Circle().fill(Color.black.opacity(0.6)))
+
+                                                        // Move right button
+                                                        if index < imageUrls.count - 1 {
+                                                            Button(action: {
+                                                                imageUrls.swapAt(index, index + 1)
+                                                            }) {
+                                                                Image(systemName: "chevron.right.circle.fill")
+                                                                    .foregroundColor(.white)
+                                                                    .background(Circle().fill(Color.orange.opacity(0.8)))
+                                                                    .font(.title3)
+                                                            }
+                                                        }
+                                                    }
+                                                    .padding(8)
+                                                }
+                                            }
+                                            .frame(width: 150, height: 150)
+                                        }
+
+                                        // Show locally selected images with controls
+                                        ForEach(0..<imageData.count, id: \.self) { index in
+                                            ZStack(alignment: .topTrailing) {
+                                                if let uiImage = UIImage(data: imageData[index]) {
+                                                    Image(uiImage: uiImage)
+                                                        .resizable()
+                                                        .aspectRatio(contentMode: .fill)
+                                                        .frame(width: 150, height: 150)
+                                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                                                }
+
+                                                // Delete button
+                                                Button(action: {
+                                                    imageData.remove(at: index)
+                                                    selectedImages.remove(at: index)
+                                                }) {
+                                                    Image(systemName: "xmark.circle.fill")
+                                                        .foregroundColor(.white)
+                                                        .background(Circle().fill(Color.black.opacity(0.6)))
+                                                        .font(.title3)
+                                                }
+                                                .padding(8)
+
+                                                // Photo number badge and reorder controls
+                                                VStack {
+                                                    Spacer()
+                                                    HStack(spacing: 4) {
+                                                        // Move left button
+                                                        if index > 0 || imageUrls.count > 0 {
+                                                            Button(action: {
+                                                                if index > 0 {
+                                                                    imageData.swapAt(index, index - 1)
+                                                                    selectedImages.swapAt(index, index - 1)
+                                                                } else if imageUrls.count > 0 {
+                                                                    // Move from imageData to end of imageUrls
+                                                                    _ = imageData.remove(at: index)
+                                                                    selectedImages.remove(at: index)
+                                                                    imageUrls.append("")  // placeholder for now
+                                                                }
+                                                            }) {
+                                                                Image(systemName: "chevron.left.circle.fill")
+                                                                    .foregroundColor(.white)
+                                                                    .background(Circle().fill(Color.orange.opacity(0.8)))
+                                                                    .font(.title3)
+                                                            }
+                                                        }
+
+                                                        Text("\(imageUrls.count + index + 1)")
+                                                            .font(.caption2)
+                                                            .fontWeight(.bold)
+                                                            .foregroundColor(.white)
+                                                            .padding(6)
+                                                            .background(Circle().fill(Color.black.opacity(0.6)))
+
+                                                        // Move right button
+                                                        if index < imageData.count - 1 {
+                                                            Button(action: {
+                                                                imageData.swapAt(index, index + 1)
+                                                                selectedImages.swapAt(index, index + 1)
+                                                            }) {
+                                                                Image(systemName: "chevron.right.circle.fill")
+                                                                    .foregroundColor(.white)
+                                                                    .background(Circle().fill(Color.orange.opacity(0.8)))
+                                                                    .font(.title3)
+                                                            }
+                                                        }
+                                                    }
+                                                    .padding(8)
+                                                }
+                                            }
+                                            .frame(width: 150, height: 150)
+                                        }
+
+                                        // Add more button (only show if less than 15 photos total)
+                                        if (imageUrls.count + imageData.count) < 15 {
+                                            PhotosPicker(
+                                                selection: $selectedImages,
+                                                maxSelectionCount: 15,
+                                                matching: .images
+                                            ) {
                                                 RoundedRectangle(cornerRadius: 12)
                                                     .fill(Color.gray.opacity(0.2))
                                                     .frame(width: 150, height: 150)
                                                     .overlay(
-                                                        ProgressView()
+                                                        VStack {
+                                                            Image(systemName: "plus")
+                                                                .font(.system(size: 30))
+                                                                .foregroundColor(.gray)
+                                                            Text("Add more")
+                                                                .font(.caption)
+                                                                .foregroundColor(.gray)
+                                                        }
                                                     )
                                             }
-                                        }
-
-                                        // Show locally selected images
-                                        ForEach(0..<imageData.count, id: \.self) { index in
-                                            if let uiImage = UIImage(data: imageData[index]) {
-                                                Image(uiImage: uiImage)
-                                                    .resizable()
-                                                    .aspectRatio(contentMode: .fill)
-                                                    .frame(width: 150, height: 150)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                            }
-                                        }
-
-                                        // Add more button
-                                        PhotosPicker(
-                                            selection: $selectedImages,
-                                            maxSelectionCount: 10,
-                                            matching: .images
-                                        ) {
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .fill(Color.gray.opacity(0.2))
-                                                .frame(width: 150, height: 150)
-                                                .overlay(
-                                                    VStack {
-                                                        Image(systemName: "plus")
-                                                            .font(.system(size: 30))
-                                                            .foregroundColor(.gray)
-                                                        Text("Add more")
-                                                            .font(.caption)
-                                                            .foregroundColor(.gray)
-                                                    }
-                                                )
                                         }
                                     }
                                 }
                                 .frame(height: 150)
-                            }
 
-                            let totalPhotos = imageUrls.count + imageData.count
-                            if totalPhotos > 0 {
-                                Text("\(totalPhotos) photo\(totalPhotos == 1 ? "" : "s") selected")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
+                                let totalPhotos = imageUrls.count + imageData.count
+                                HStack {
+                                    Text("\(totalPhotos) photo\(totalPhotos == 1 ? "" : "s") • Use arrows to reorder")
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                }
                             }
                         }
                     }
@@ -268,8 +362,8 @@ struct CreatePostView: View {
 
                     // Description
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Description (Optional)")
-                            .fontWeight(.semibold)
+                        Text("Description")
+                            .font(.system(size: 15, weight: .medium))
                         TextEditor(text: $description)
                             .frame(height: 100)
                             .padding(4)
@@ -279,10 +373,10 @@ struct CreatePostView: View {
 
                     // Price
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Price (Optional)")
-                            .fontWeight(.semibold)
-                        TextField("$0.00", text: $price)
-                            .keyboardType(.decimalPad)
+                        Text("Price")
+                            .font(.system(size: 15, weight: .medium))
+                        TextField("$0", text: $price)
+                            .keyboardType(.numberPad)
                             .padding()
                             .background(Color(.systemGray6))
                             .cornerRadius(8)
@@ -291,8 +385,8 @@ struct CreatePostView: View {
                     // Bedrooms and Bathrooms
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Bedrooms (Optional)")
-                                .fontWeight(.semibold)
+                            Text("Bedrooms")
+                                .font(.system(size: 15, weight: .medium))
                             TextField("0", text: $bedrooms)
                                 .keyboardType(.numberPad)
                                 .padding()
@@ -301,8 +395,8 @@ struct CreatePostView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Bathrooms (Optional)")
-                                .fontWeight(.semibold)
+                            Text("Bathrooms")
+                                .font(.system(size: 15, weight: .medium))
                             TextField("0", text: $bathrooms)
                                 .keyboardType(.decimalPad)
                                 .padding()
@@ -313,32 +407,58 @@ struct CreatePostView: View {
 
                     // Location
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Location (Optional)")
-                            .fontWeight(.semibold)
+                        Text("Location")
+                            .font(.system(size: 15, weight: .medium))
 
-                        TextField("Address", text: $address)
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(8)
-
-                        HStack {
-                            TextField("City", text: $city)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
-
-                            TextField("State", text: $state)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
-                                .frame(maxWidth: 100)
+                        // Hide location toggle
+                        HStack(spacing: 8) {
+                            Button(action: {
+                                hideLocation.toggle()
+                                if hideLocation {
+                                    // Clear location fields when hiding
+                                    address = ""
+                                    city = ""
+                                    state = ""
+                                    zipCode = ""
+                                }
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: hideLocation ? "checkmark.circle.fill" : "circle")
+                                        .foregroundColor(hideLocation ? .orange : .gray)
+                                    Text("Hide location")
+                                        .font(.subheadline)
+                                        .foregroundColor(.primary)
+                                }
+                            }
                         }
+                        .padding(.bottom, 4)
 
-                        TextField("Zip Code", text: $zipCode)
-                            .keyboardType(.numberPad)
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(8)
+                        // Only show address fields if location is not hidden
+                        if !hideLocation {
+                            TextField("Address", text: $address)
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
+
+                            HStack {
+                                TextField("City", text: $city)
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(8)
+
+                                TextField("State", text: $state)
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(8)
+                                    .frame(maxWidth: 100)
+                            }
+
+                            TextField("Zip Code", text: $zipCode)
+                                .keyboardType(.numberPad)
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
+                        }
                     }
 
                     // Post button
@@ -349,20 +469,20 @@ struct CreatePostView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding()
                         } else {
-                            Text(editingHome == nil ? "Post Ugly Home" : "Update Post")
+                            Text(editingHome == nil ? "Post Property" : "Update Property")
                                 .fontWeight(.semibold)
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding()
                         }
                     }
-                    .background((imageData.isEmpty && imageUrls.isEmpty) ? Color.gray : Color.orange)
+                    .background(isFormValid ? Color.orange : Color.gray)
                     .cornerRadius(10)
-                    .disabled((imageData.isEmpty && imageUrls.isEmpty) || isUploading)
+                    .disabled(!isFormValid || isUploading)
                 }
                 .padding()
             }
-            .navigationTitle(editingHome == nil ? "New Post" : "Edit Post")
+            .navigationTitle(editingHome == nil ? "New Property" : "Edit Property")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {

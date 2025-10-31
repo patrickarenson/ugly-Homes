@@ -38,6 +38,7 @@ struct CreatePostView: View {
     @State private var hasOpenHousePaid = false
     @State private var stripePaymentId: String?
     @State private var showPaymentSheet = false
+    @State private var isProcessingPayment = false
 
     enum ListingType: String, CaseIterable {
         case sale = "For Sale"
@@ -504,19 +505,27 @@ struct CreatePostView: View {
                                     if !hasOpenHousePaid {
                                         Button(action: processOpenHousePayment) {
                                             HStack {
-                                                Image(systemName: "creditcard.fill")
-                                                Text("Pay $5 via Apple Pay")
-                                                    .fontWeight(.semibold)
+                                                if isProcessingPayment {
+                                                    ProgressView()
+                                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                    Text("Processing...")
+                                                        .fontWeight(.semibold)
+                                                } else {
+                                                    Image(systemName: "creditcard.fill")
+                                                    Text("Pay $5 via Apple Pay")
+                                                        .fontWeight(.semibold)
+                                                }
                                             }
                                             .foregroundColor(.white)
                                             .frame(maxWidth: .infinity)
                                             .padding()
-                                            .background(Color.orange)
+                                            .background(isProcessingPayment ? Color.gray : Color.orange)
                                             .cornerRadius(10)
                                         }
+                                        .disabled(isProcessingPayment)
 
                                         // Show error if payment fails
-                                        if !errorMessage.isEmpty && errorMessage.contains("Payment") {
+                                        if !errorMessage.isEmpty && (errorMessage.contains("Payment") || errorMessage.contains("Authentication") || errorMessage.contains("Error")) {
                                             Text(errorMessage)
                                                 .font(.caption)
                                                 .foregroundColor(.red)
@@ -909,6 +918,10 @@ struct CreatePostView: View {
     }
 
     func processOpenHousePayment() {
+        // Clear any previous errors
+        errorMessage = ""
+        isProcessingPayment = true
+
         Task {
             do {
                 let userId = try await SupabaseManager.shared.client.auth.session.user.id
@@ -918,6 +931,8 @@ struct CreatePostView: View {
                 // Call StripeManager to handle payment
                 StripeManager.shared.processOpenHousePayment(userId: userId.uuidString, homeId: "new") { result in
                     DispatchQueue.main.async {
+                        self.isProcessingPayment = false
+
                         switch result {
                         case .success(let paymentIntentId):
                             print("✅ Payment successful!")
@@ -925,13 +940,14 @@ struct CreatePostView: View {
                             self.stripePaymentId = paymentIntentId
                         case .failure(let error):
                             print("❌ Payment failed: \(error.localizedDescription)")
-                            self.errorMessage = "Payment failed: \(error.localizedDescription)"
+                            self.errorMessage = "Payment Error: \(error.localizedDescription)"
                         }
                     }
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self.errorMessage = "Authentication error: \(error.localizedDescription)"
+                    self.isProcessingPayment = false
+                    self.errorMessage = "Authentication Error: \(error.localizedDescription)"
                 }
             }
         }

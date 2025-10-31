@@ -26,13 +26,16 @@ class StripeManager: ObservableObject {
 
     /// Create a payment intent for Open House feature ($5)
     func createPaymentIntent(userId: String, homeId: String) async throws -> String {
-        // Call your backend to create payment intent
-        // This should call a Supabase Edge Function or your own backend
-
+        // Call Supabase Edge Function to create payment intent
         let url = URL(string: "https://pgezrygzubjieqfzyccy.supabase.co/functions/v1/create-payment-intent")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // IMPORTANT: Add authorization header for Edge Function access
+        let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBnZXpyeWd6dWJqaWVxZnp5Y2N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4MzE5NjcsImV4cCI6MjA3NzQwNzk2N30.-AK_lNlPfjdPCyXP2KySnFFZ3D_u5UbczXmcOFD6AA8"
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
 
         let body: [String: Any] = [
             "amount": openHousePrice,
@@ -44,13 +47,26 @@ class StripeManager: ObservableObject {
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        print("🌐 Calling Edge Function: create-payment-intent")
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        // Check response status
+        if let httpResponse = response as? HTTPURLResponse {
+            print("📥 Edge Function response status: \(httpResponse.statusCode)")
+            if httpResponse.statusCode != 200 {
+                let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
+                print("❌ Edge Function error: \(errorText)")
+                throw NSError(domain: "StripeManager", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errorText])
+            }
+        }
+
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
         guard let clientSecret = json?["clientSecret"] as? String else {
-            throw NSError(domain: "StripeManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to get client secret"])
+            throw NSError(domain: "StripeManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to get client secret from Edge Function"])
         }
 
+        print("✅ Got client secret from Edge Function")
         return clientSecret
     }
 

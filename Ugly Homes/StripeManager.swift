@@ -72,22 +72,47 @@ class StripeManager: ObservableObject {
 
     /// Present the Stripe payment sheet
     func presentPaymentSheet(clientSecret: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        print("🎨 Setting up payment sheet configuration...")
+
         var configuration = PaymentSheet.Configuration()
         configuration.merchantDisplayName = "Ugly Homes"
-        configuration.applePay = .init(merchantId: "merchant.com.homechat.app", merchantCountryCode: "US")
+
+        // Optional: Disable Apple Pay if merchant ID isn't set up
+        // configuration.applePay = .init(merchantId: "merchant.com.homechat.app", merchantCountryCode: "US")
+
         configuration.defaultBillingDetails.name = ""
         configuration.allowsDelayedPaymentMethods = false
 
+        print("💳 Creating PaymentSheet with client secret...")
         let paymentSheet = PaymentSheet(paymentIntentClientSecret: clientSecret, configuration: configuration)
 
-        // Get the root view controller
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let rootViewController = windowScene.windows.first?.rootViewController else {
+        // Get the topmost view controller for presenting the payment sheet
+        print("🔍 Looking for topmost view controller...")
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+            print("❌ No window scene found")
+            completion(.failure(NSError(domain: "StripeManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "No window scene found"])))
+            return
+        }
+
+        print("🪟 Window scene found: \(windowScene)")
+
+        guard let rootViewController = windowScene.windows.first?.rootViewController else {
+            print("❌ No root view controller found in window scene")
             completion(.failure(NSError(domain: "StripeManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "No root view controller"])))
             return
         }
 
-        paymentSheet.present(from: rootViewController) { result in
+        // Get the topmost presented view controller (important for sheets)
+        var topController = rootViewController
+        while let presented = topController.presentedViewController {
+            topController = presented
+        }
+
+        print("✅ Topmost view controller found: \(type(of: topController))")
+        print("🎬 Presenting payment sheet from: \(topController)")
+
+        paymentSheet.present(from: topController) { result in
+            print("📊 Payment sheet result received: \(result)")
             switch result {
             case .completed:
                 print("✅ Payment completed!")
@@ -96,8 +121,8 @@ class StripeManager: ObservableObject {
                 print("❌ Payment failed: \(error.localizedDescription)")
                 completion(.failure(error))
             case .canceled:
-                print("⚠️ Payment canceled")
-                completion(.failure(NSError(domain: "StripeManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Payment canceled"])))
+                print("⚠️ Payment canceled by user")
+                completion(.failure(NSError(domain: "StripeManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Payment canceled by user"])))
             }
         }
     }

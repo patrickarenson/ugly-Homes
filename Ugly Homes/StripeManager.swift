@@ -12,16 +12,25 @@ import StripePaymentSheet
 class StripeManager: ObservableObject {
     static let shared = StripeManager()
 
-    // Stripe publishable key from realtorDocs account (LIVE key)
-    private let publishableKey = "pk_live_51IQ4KFINuCqfox5ANOT1zQgE5WDR8mDAKixO5wP80hu6CgHLbi6zi04tDBW8WiYPhYlBOPZYcmOIWIXzPiGXvC5H00GUzwaHNw"
+    // MARK: - Configuration
+    // Set to false for production, true for testing
+    private let useTestMode = true
+
+    // Stripe publishable keys from realtorDocs account
+    private let livePublishableKey = "pk_live_51IQ4KFINuCqfox5ANOT1zQgE5WDR8mDAKixO5wP80hu6CgHLbi6zi04tDBW8WiYPhYlBOPZYcmOIWIXzPiGXvC5H00GUzwaHNw"
+    private let testPublishableKey = "pk_test_51IQ4KFINuCqfox5Aw7pPA1TcK2kTYve8mB2wm7zo13detBUg6c1eeZgnrWa8yKi1ltZjvkH5i9ZjLbD1yQas63eJ00Hg9v0Hbq"
+
+    private var publishableKey: String {
+        return useTestMode ? testPublishableKey : livePublishableKey
+    }
 
     // Payment configuration
     private let openHousePrice: Int = 500 // $5.00 in cents
 
     private init() {
-        // Configure Stripe (will be activated once Stripe SDK is added)
-        // Uncomment this line after adding Stripe SDK to Xcode:
+        // Configure Stripe with the appropriate key
         STPAPIClient.shared.publishableKey = publishableKey
+        print("🔑 Stripe configured in \(useTestMode ? "TEST" : "LIVE") mode")
     }
 
     /// Create a payment intent for Open House feature ($5)

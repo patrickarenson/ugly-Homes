@@ -19,6 +19,7 @@ struct EditProfileView: View {
     @State private var profileImageData: Data?
     @State private var isUploading = false
     @State private var errorMessage = ""
+    @State private var debugMessage = ""
 
     init(profile: Profile) {
         self.currentProfile = profile
@@ -72,8 +73,12 @@ struct EditProfileView: View {
                         }
                         .onChange(of: selectedImage) { oldValue, newValue in
                             Task {
+                                debugMessage = "Loading photo..."
                                 if let data = try? await newValue?.loadTransferable(type: Data.self) {
                                     profileImageData = data
+                                    debugMessage = "Photo loaded: \(data.count) bytes"
+                                } else {
+                                    debugMessage = "Failed to load photo"
                                 }
                             }
                         }
@@ -129,6 +134,12 @@ struct EditProfileView: View {
                             .font(.caption)
                     }
 
+                    if !debugMessage.isEmpty {
+                        Text(debugMessage)
+                            .foregroundColor(.blue)
+                            .font(.caption)
+                    }
+
                     // Save button
                     Button(action: saveProfile) {
                         if isUploading {
@@ -174,6 +185,8 @@ struct EditProfileView: View {
     }
 
     func saveProfile() {
+        debugMessage = "Starting save..."
+
         guard !username.isEmpty else {
             errorMessage = "Username is required"
             return
@@ -185,6 +198,7 @@ struct EditProfileView: View {
         Task {
             do {
                 let userId = try await SupabaseManager.shared.client.auth.session.user.id
+                debugMessage = "Got user ID"
 
                 // Check if username is already taken (if changed)
                 if username != currentProfile.username {
@@ -206,10 +220,8 @@ struct EditProfileView: View {
 
                 // Upload profile image if selected (skip if fails)
                 if let imageData = profileImageData {
+                    debugMessage = "Uploading photo (\(imageData.count) bytes)..."
                     let fileName = "\(userId.uuidString)-profile.jpg"
-
-                    print("📷 Starting upload...")
-                    NSLog("📷 Uploading profile image to: \(fileName)")
 
                     // Try to upload, but continue even if it fails
                     do {
@@ -230,12 +242,14 @@ struct EditProfileView: View {
                             .getPublicURL(path: fileName)
 
                         avatarUrl = publicURL.absoluteString
-                        NSLog("✅ Profile image uploaded: \(avatarUrl!)")
+                        debugMessage = "Photo uploaded! URL: \(avatarUrl!)"
                     } catch let uploadError {
-                        NSLog("❌ Storage upload error: \(uploadError)")
+                        debugMessage = "Upload failed: \(uploadError.localizedDescription)"
+                        errorMessage = "Photo upload failed: \(uploadError.localizedDescription)"
                         // Don't stop - just skip the avatar update
-                        print("⚠️ Continuing without avatar update")
                     }
+                } else {
+                    debugMessage = "No photo selected to upload"
                 }
 
                 // Update profile in database
@@ -246,12 +260,16 @@ struct EditProfileView: View {
                     let avatar_url: String?
                 }
 
+                let finalAvatarUrl = avatarUrl ?? currentProfile.avatarUrl
+
                 let update = ProfileUpdate(
                     username: username,
                     full_name: fullName.isEmpty ? nil : fullName,
                     bio: bio.isEmpty ? nil : bio,
-                    avatar_url: avatarUrl ?? currentProfile.avatarUrl
+                    avatar_url: finalAvatarUrl
                 )
+
+                debugMessage = "Saving to database..."
 
                 try await SupabaseManager.shared.client
                     .from("profiles")
@@ -259,8 +277,7 @@ struct EditProfileView: View {
                     .eq("id", value: userId.uuidString)
                     .execute()
 
-                print("✅ Profile updated successfully!")
-                print("✅ Avatar URL saved: \(avatarUrl ?? currentProfile.avatarUrl ?? "none")")
+                debugMessage = "✅ Profile saved! Avatar: \(finalAvatarUrl != nil ? "YES" : "NO")"
                 isUploading = false
 
                 // Notify to refresh

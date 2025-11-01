@@ -1157,26 +1157,22 @@ struct HomePostView: View {
 
         Task {
             do {
-                struct CommunityPriceResponse: Codable {
-                    let communityPrice: Decimal?
+                print("🔄 Loading community price for home: \(home.id)")
 
-                    enum CodingKeys: String, CodingKey {
-                        case communityPrice = "get_community_price"
-                    }
-                }
-
-                let response: CommunityPriceResponse = try await SupabaseManager.shared.client
+                // RPC functions return values directly, not wrapped in objects
+                let response: Decimal = try await SupabaseManager.shared.client
                     .rpc("get_community_price", params: ["home_id_param": home.id.uuidString])
                     .single()
                     .execute()
                     .value
 
-                if let communityPrice = response.communityPrice {
-                    estimatedPrice = NSDecimalNumber(decimal: communityPrice).intValue
-                    print("📊 Community price loaded: $\(estimatedPrice)")
-                }
+                estimatedPrice = NSDecimalNumber(decimal: response).intValue
+                print("📊 Community price loaded: $\(estimatedPrice) (original: $\(NSDecimalNumber(decimal: home.price ?? 0).intValue))")
             } catch {
                 print("❌ Error loading community price: \(error)")
+                print("❌ Error details: \(error.localizedDescription)")
+                // Fallback to original price if community price fails
+                estimatedPrice = NSDecimalNumber(decimal: home.price ?? 0).intValue
             }
         }
     }

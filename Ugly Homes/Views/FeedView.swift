@@ -617,16 +617,13 @@ struct HomePostView: View {
                     HStack(spacing: 4) {
                         // Up arrow button
                         Button(action: {
-                            if !upVoted {
-                                upVoted = true
-                                estimatedPrice = Int(Double(estimatedPrice) * 1.005)
-                            }
+                            submitPriceVote(voteType: "up")
                         }) {
                             Image(systemName: "arrow.up")
                                 .font(.title3)
-                                .foregroundColor(upVoted ? .gray.opacity(0.5) : .black)
+                                .foregroundColor(upVoted ? .green : .gray)
                         }
-                        .disabled(upVoted)
+                        .disabled(upVoted || downVoted)
 
                         // Estimated price in orange (bold with commas)
                         Text(formatPrice(estimatedPrice))
@@ -636,16 +633,13 @@ struct HomePostView: View {
 
                         // Down arrow button
                         Button(action: {
-                            if !downVoted {
-                                downVoted = true
-                                estimatedPrice = Int(Double(estimatedPrice) * 0.995)
-                            }
+                            submitPriceVote(voteType: "down")
                         }) {
                             Image(systemName: "arrow.down")
                                 .font(.title3)
-                                .foregroundColor(downVoted ? .gray.opacity(0.5) : .black)
+                                .foregroundColor(downVoted ? .red : .gray)
                         }
-                        .disabled(downVoted)
+                        .disabled(upVoted || downVoted)
                     }
                 }
             }
@@ -735,6 +729,8 @@ struct HomePostView: View {
             if currentUserId == nil {
                 loadCurrentUserId()
             }
+            // Load existing price vote and community price
+            loadPriceVote()
         }
         .confirmationDialog("Post Options", isPresented: $showMenu, titleVisibility: .hidden) {
             Button("Edit Post") {
@@ -1070,6 +1066,119 @@ struct HomePostView: View {
         formatter.maximumFractionDigits = 0
         let nsDecimal = NSDecimalNumber(decimal: price)
         return "$" + (formatter.string(from: nsDecimal) ?? "\(price)")
+    }
+
+    // MARK: - Price Voting Functions
+
+    func loadPriceVote() {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                struct PriceVote: Codable {
+                    let voteType: String
+
+                    enum CodingKeys: String, CodingKey {
+                        case voteType = "vote_type"
+                    }
+                }
+
+                let response: [PriceVote] = try await SupabaseManager.shared.client
+                    .from("price_votes")
+                    .select("vote_type")
+                    .eq("home_id", value: home.id.uuidString)
+                    .eq("user_id", value: userId.uuidString)
+                    .execute()
+                    .value
+
+                if let vote = response.first {
+                    upVoted = vote.voteType == "up"
+                    downVoted = vote.voteType == "down"
+                    print("📊 User has voted: \(vote.voteType)")
+                }
+
+                // Load community-adjusted price
+                loadCommunityPrice()
+            } catch {
+                print("❌ Error loading price vote: \(error)")
+            }
+        }
+    }
+
+    func submitPriceVote(voteType: String) {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                struct PriceVoteInsert: Encodable {
+                    let homeId: String
+                    let userId: String
+                    let voteType: String
+
+                    enum CodingKeys: String, CodingKey {
+                        case homeId = "home_id"
+                        case userId = "user_id"
+                        case voteType = "vote_type"
+                    }
+                }
+
+                let vote = PriceVoteInsert(
+                    homeId: home.id.uuidString,
+                    userId: userId.uuidString,
+                    voteType: voteType
+                )
+
+                try await SupabaseManager.shared.client
+                    .from("price_votes")
+                    .upsert(vote)
+                    .execute()
+
+                // Update local state
+                if voteType == "up" {
+                    upVoted = true
+                    downVoted = false
+                } else {
+                    downVoted = true
+                    upVoted = false
+                }
+
+                print("✅ Price vote submitted: \(voteType)")
+
+                // Reload community price to see the effect
+                loadCommunityPrice()
+            } catch {
+                print("❌ Error submitting price vote: \(error)")
+            }
+        }
+    }
+
+    func loadCommunityPrice() {
+        guard home.price != nil else { return }
+
+        Task {
+            do {
+                struct CommunityPriceResponse: Codable {
+                    let communityPrice: Decimal?
+
+                    enum CodingKeys: String, CodingKey {
+                        case communityPrice = "get_community_price"
+                    }
+                }
+
+                let response: CommunityPriceResponse = try await SupabaseManager.shared.client
+                    .rpc("get_community_price", params: ["home_id_param": home.id.uuidString])
+                    .single()
+                    .execute()
+                    .value
+
+                if let communityPrice = response.communityPrice {
+                    estimatedPrice = NSDecimalNumber(decimal: communityPrice).intValue
+                    print("📊 Community price loaded: $\(estimatedPrice)")
+                }
+            } catch {
+                print("❌ Error loading community price: \(error)")
+            }
+        }
     }
 }
 

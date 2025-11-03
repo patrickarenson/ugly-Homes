@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct ProfileView: View {
+    let viewingUserId: UUID? // If nil, show own profile; if set, show this user's profile
+
     @State private var profile: Profile?
     @State private var userHomes: [Home] = []
     @State private var isLoading = false
@@ -16,6 +18,18 @@ struct ProfileView: View {
     @State private var selectedHome: Home?
     @State private var showPostDetail = false
     @State private var currentUserId: UUID?
+    @State private var showChat = false
+
+    init(viewingUserId: UUID? = nil) {
+        self.viewingUserId = viewingUserId
+    }
+
+    var isViewingOtherProfile: Bool {
+        guard let viewingId = viewingUserId, let currentId = currentUserId else {
+            return false
+        }
+        return viewingId != currentId
+    }
 
     var body: some View {
         NavigationView {
@@ -77,6 +91,26 @@ struct ProfileView: View {
                                     .foregroundColor(.gray)
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal)
+                            }
+
+                            // Message button (only show when viewing another user's profile)
+                            if isViewingOtherProfile {
+                                Button(action: {
+                                    showChat = true
+                                }) {
+                                    HStack {
+                                        Image(systemName: "message.fill")
+                                        Text("Message")
+                                            .fontWeight(.semibold)
+                                    }
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .background(Color.blue)
+                                    .cornerRadius(8)
+                                }
+                                .padding(.horizontal, 40)
+                                .padding(.top, 8)
                             }
                         }
                         .padding(.top, 20)
@@ -193,31 +227,34 @@ struct ProfileView: View {
                     }
                 }
             }
-            .navigationTitle("Profile")
+            .navigationTitle(isViewingOtherProfile ? (profile?.username ?? "Profile") : "Profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button(action: {
-                            showEditProfile = true
-                        }) {
-                            Label("Edit Profile", systemImage: "pencil")
-                        }
+                // Only show menu when viewing own profile
+                if !isViewingOtherProfile {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Menu {
+                            Button(action: {
+                                showEditProfile = true
+                            }) {
+                                Label("Edit Profile", systemImage: "pencil")
+                            }
 
-                        Button(action: {
-                            showAccountSettings = true
-                        }) {
-                            Label("Account Settings", systemImage: "gearshape")
-                        }
+                            Button(action: {
+                                showAccountSettings = true
+                            }) {
+                                Label("Account Settings", systemImage: "gearshape")
+                            }
 
-                        Button(role: .destructive, action: {
-                            signOut()
-                        }) {
-                            Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                            Button(role: .destructive, action: {
+                                signOut()
+                            }) {
+                                Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.title3)
                         }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.title3)
                     }
                 }
             }
@@ -233,7 +270,7 @@ struct ProfileView: View {
                 if let home = selectedHome {
                     NavigationView {
                         ScrollView {
-                            HomePostView(home: home, showSoldOptions: true, preloadedUserId: currentUserId)
+                            HomePostView(home: home, showSoldOptions: !isViewingOtherProfile, preloadedUserId: currentUserId)
                         }
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
@@ -244,6 +281,15 @@ struct ProfileView: View {
                             }
                         }
                     }
+                }
+            }
+            .sheet(isPresented: $showChat) {
+                if let profile = profile {
+                    ChatView(
+                        otherUserId: profile.id,
+                        otherUsername: profile.username,
+                        otherAvatarUrl: profile.avatarUrl
+                    )
                 }
             }
             .onAppear {
@@ -266,15 +312,19 @@ struct ProfileView: View {
 
         Task {
             do {
-                let userId = try await SupabaseManager.shared.client.auth.session.user.id
-                currentUserId = userId
-                print("📥 Loading profile for user: \(userId)")
+                // Get current user ID
+                let currentId = try await SupabaseManager.shared.client.auth.session.user.id
+                currentUserId = currentId
+
+                // Determine which user's profile to load
+                let targetUserId = viewingUserId ?? currentId
+                print("📥 Loading profile for user: \(targetUserId)")
 
                 // Load profile
                 let profileResponse: [Profile] = try await SupabaseManager.shared.client
                     .from("profiles")
                     .select()
-                    .eq("id", value: userId.uuidString)
+                    .eq("id", value: targetUserId.uuidString)
                     .execute()
                     .value
 
@@ -286,7 +336,7 @@ struct ProfileView: View {
                 let homesResponse: [Home] = try await SupabaseManager.shared.client
                     .from("homes")
                     .select("*, profile:user_id(*)")
-                    .eq("user_id", value: userId.uuidString)
+                    .eq("user_id", value: targetUserId.uuidString)
                     .order("created_at", ascending: false)
                     .execute()
                     .value

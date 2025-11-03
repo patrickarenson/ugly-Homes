@@ -14,7 +14,7 @@ class StripeManager: ObservableObject {
 
     // MARK: - Configuration
     // Set to false for production, true for testing
-    private let useTestMode = false  // Switch to live mode
+    private let useTestMode = true  // Using test mode for development
     // Stripe publishable keys from realtorDocs account
     private let livePublishableKey = "pk_live_51IQ4KFINuCqfox5ANOT1zQgE5WDR8mDAKixO5wP80hu6CgHLbi6zi04tDBW8WiYPhYlBOPZYcmOIWIXzPiGXvC5H00GUzwaHNw"
     private let testPublishableKey = "pk_test_51IQ4KFINuCqfox5Aw7pPA1TcK2kTYve8mB2wm7zo13detBUg6c1eeZgnrWa8yKi1ltZjvkH5i9ZjLbD1yQas63eJ00Hg9v0Hbq"

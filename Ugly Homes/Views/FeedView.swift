@@ -388,17 +388,32 @@ struct HomePostView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Header with user info
             HStack {
-                // Profile photo
-                if let avatarUrl = home.profile?.avatarUrl, !avatarUrl.isEmpty, let url = URL(string: avatarUrl) {
-                    // Add timestamp to prevent caching
-                    let urlWithCache = URL(string: "\(avatarUrl)?t=\(Date().timeIntervalSince1970)")
-                    AsyncImage(url: urlWithCache ?? url) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 32, height: 32)
-                            .clipShape(Circle())
-                    } placeholder: {
+                NavigationLink(destination: {
+                    if let profile = home.profile {
+                        ProfileView(viewingUserId: profile.id)
+                    }
+                }) {
+                    // Profile photo
+                    if let avatarUrl = home.profile?.avatarUrl, !avatarUrl.isEmpty, let url = URL(string: avatarUrl) {
+                        // Add timestamp to prevent caching
+                        let urlWithCache = URL(string: "\(avatarUrl)?t=\(Date().timeIntervalSince1970)")
+                        AsyncImage(url: urlWithCache ?? url) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 32, height: 32)
+                                .clipShape(Circle())
+                        } placeholder: {
+                            Circle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(width: 32, height: 32)
+                                .overlay(
+                                    Image(systemName: "person.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.white)
+                                )
+                        }
+                    } else {
                         Circle()
                             .fill(Color.gray.opacity(0.3))
                             .frame(width: 32, height: 32)
@@ -408,22 +423,19 @@ struct HomePostView: View {
                                     .foregroundColor(.white)
                             )
                     }
-                } else {
-                    Circle()
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(width: 32, height: 32)
-                        .overlay(
-                            Image(systemName: "person.fill")
-                                .font(.caption)
-                                .foregroundColor(.white)
-                        )
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(home.profile?.username ?? "User")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
+                NavigationLink(destination: {
+                    if let profile = home.profile {
+                        ProfileView(viewingUserId: profile.id)
+                    }
+                }) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("@\(home.profile?.username ?? "user")")
+                                .font(.system(size: 13))
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
 
                         // Sold/Leased badge
                         if let status = soldStatus {
@@ -478,6 +490,7 @@ struct HomePostView: View {
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
                         }
+                    }
                     }
                 }
 
@@ -660,10 +673,11 @@ struct HomePostView: View {
 
             // Caption
             HStack(alignment: .top) {
-                Text(home.profile?.username ?? "User")
+                Text("@\(home.profile?.username ?? "user")")
                     .fontWeight(.semibold)
                 + Text(" ")
                 + Text(home.title)
+                    .foregroundColor(.primary)
             }
             .font(.subheadline)
             .padding(.horizontal)

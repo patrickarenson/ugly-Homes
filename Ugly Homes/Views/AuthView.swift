@@ -17,90 +17,150 @@ struct AuthView: View {
     @State private var isLoading = false
 
     var body: some View {
-        VStack(spacing: 20) {
-            // Logo/Title
-            VStack(spacing: 8) {
-                Image(systemName: "house.fill")
-                    .font(.system(size: 60))
-                    .foregroundColor(.orange)
+        ZStack {
+            // Gradient background
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color(red: 1.0, green: 0.65, blue: 0.3),  // Orange
+                    Color(red: 1.0, green: 0.45, blue: 0.2)   // Deeper orange
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-                Text("Ugly Homes")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-            }
-            .padding(.bottom, 40)
+            VStack(spacing: 0) {
+                Spacer()
 
-            // Input fields
-            VStack(spacing: 16) {
-                if isSignUp {
-                    TextField("Username", text: $username)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .onChange(of: username) { oldValue, newValue in
-                            // Automatically convert to lowercase
-                            username = newValue.lowercased()
+                // Logo and title
+                VStack(spacing: 16) {
+                    // Housers Logo
+                    Image("HousersLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 120, height: 120)
+                        .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
+
+                    Text("housers")
+                        .font(.system(size: 42, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
+
+                    Text("Discover ugly homes, beautiful deals")
+                        .font(.system(size: 15))
+                        .foregroundColor(.white.opacity(0.9))
+                }
+                .padding(.bottom, 50)
+
+                // Auth card
+                VStack(spacing: 20) {
+                    // Input fields
+                    VStack(spacing: 14) {
+                        if isSignUp {
+                            HStack {
+                                Image(systemName: "person.fill")
+                                    .foregroundColor(.gray)
+                                    .frame(width: 20)
+                                TextField("Username", text: $username)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .onChange(of: username) { oldValue, newValue in
+                                        username = newValue.lowercased()
+                                    }
+                            }
+                            .padding()
+                            .background(Color.white)
+                            .cornerRadius(12)
+                            .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+                        }
+
+                        HStack {
+                            Image(systemName: "envelope.fill")
+                                .foregroundColor(.gray)
+                                .frame(width: 20)
+                            TextField("Email", text: $email)
+                                .textInputAutocapitalization(.never)
+                                .keyboardType(.emailAddress)
+                                .autocorrectionDisabled()
                         }
                         .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                }
+                        .background(Color.white)
+                        .cornerRadius(12)
+                        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
 
-                TextField("Email", text: $email)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.emailAddress)
-                    .autocorrectionDisabled()
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(10)
-
-                SecureField("Password", text: $password)
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(10)
-            }
-            .padding(.horizontal)
-
-            // Error message
-            if !errorMessage.isEmpty {
-                Text(errorMessage)
-                    .foregroundColor(.red)
-                    .font(.caption)
-                    .padding(.horizontal)
-            }
-
-            // Auth button
-            Button(action: handleAuth) {
-                if isLoading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .frame(maxWidth: .infinity)
+                        HStack {
+                            Image(systemName: "lock.fill")
+                                .foregroundColor(.gray)
+                                .frame(width: 20)
+                            SecureField("Password", text: $password)
+                        }
                         .padding()
-                } else {
-                    Text(isSignUp ? "Sign Up" : "Log In")
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(12)
+                        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+                    }
+
+                    // Error message
+                    if !errorMessage.isEmpty {
+                        Text(errorMessage)
+                            .foregroundColor(.white)
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 8)
+                            .background(Color.red.opacity(0.8))
+                            .cornerRadius(8)
+                    }
+
+                    // Auth button
+                    Button(action: handleAuth) {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                        } else {
+                            Text(isSignUp ? "Sign Up" : "Log In")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                        }
+                    }
+                    .background(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color(red: 0.2, green: 0.2, blue: 0.25),
+                                Color.black
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .cornerRadius(12)
+                    .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+                    .disabled(isLoading)
+
+                    // Toggle between sign up and login
+                    Button(action: {
+                        isSignUp.toggle()
+                        errorMessage = ""
+                    }) {
+                        HStack(spacing: 4) {
+                            Text(isSignUp ? "Already have an account?" : "Don't have an account?")
+                                .foregroundColor(.white.opacity(0.9))
+                            Text(isSignUp ? "Log In" : "Sign Up")
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                        }
+                        .font(.subheadline)
+                    }
                 }
-            }
-            .background(Color.orange)
-            .cornerRadius(10)
-            .padding(.horizontal)
-            .disabled(isLoading)
+                .padding(.horizontal, 32)
 
-            // Toggle between sign up and login
-            Button(action: {
-                isSignUp.toggle()
-                errorMessage = ""
-            }) {
-                Text(isSignUp ? "Already have an account? Log In" : "Don't have an account? Sign Up")
-                    .font(.subheadline)
-                    .foregroundColor(.blue)
+                Spacer()
+                Spacer()
             }
-
-            Spacer()
         }
-        .padding(.top, 60)
     }
 
     func handleAuth() {

@@ -157,7 +157,7 @@ struct ShareSheet: View {
                                     copyLink()
                                 }
 
-                                // Messages
+                                // Messages (SMS)
                                 ShareOptionButton(
                                     icon: "message.fill",
                                     title: "Messages",
@@ -166,9 +166,36 @@ struct ShareSheet: View {
                                     shareViaMessages()
                                 }
 
+                                // WhatsApp
+                                ShareOptionButton(
+                                    icon: "bubble.left.fill",
+                                    title: "WhatsApp",
+                                    color: Color(red: 0.15, green: 0.78, blue: 0.42)
+                                ) {
+                                    shareViaWhatsApp()
+                                }
+
+                                // Facebook
+                                ShareOptionButton(
+                                    icon: "f.circle.fill",
+                                    title: "Facebook",
+                                    color: Color(red: 0.23, green: 0.35, blue: 0.6)
+                                ) {
+                                    shareViaFacebook()
+                                }
+
+                                // Email (Gmail)
+                                ShareOptionButton(
+                                    icon: "envelope.fill",
+                                    title: "Email",
+                                    color: .red
+                                ) {
+                                    shareViaEmail()
+                                }
+
                                 // More
                                 ShareOptionButton(
-                                    icon: "square.and.arrow.up",
+                                    icon: "ellipsis.circle.fill",
                                     title: "More",
                                     color: .orange
                                 ) {
@@ -218,13 +245,31 @@ struct ShareSheet: View {
 
         // Check if Instagram is installed
         if UIApplication.shared.canOpenURL(instagramURL) {
+            // Load Housers logo as sticker overlay
+            var stickerData: Data?
+            if let logoImage = UIImage(named: "HousersLogo") {
+                // Resize logo to be smaller (sticker size)
+                let targetSize = CGSize(width: 120, height: 120)
+                UIGraphicsBeginImageContextWithOptions(targetSize, false, 0.0)
+                logoImage.draw(in: CGRect(origin: .zero, size: targetSize))
+                let resizedLogo = UIGraphicsGetImageFromCurrentImageContext()
+                UIGraphicsEndImageContext()
+
+                stickerData = resizedLogo?.pngData()
+            }
+
             // Create pasteboard items for Instagram Stories
-            let pasteboardItems: [[String: Any]] = [
-                [
-                    "com.instagram.sharedSticker.backgroundImage": imageData,
-                    "com.instagram.sharedSticker.contentURL": shareURL
-                ]
+            var pasteboardDict: [String: Any] = [
+                "com.instagram.sharedSticker.backgroundImage": imageData,
+                "com.instagram.sharedSticker.contentURL": shareURL
             ]
+
+            // Add logo as sticker overlay if available
+            if let stickerData = stickerData {
+                pasteboardDict["com.instagram.sharedSticker.stickerImage"] = stickerData
+            }
+
+            let pasteboardItems: [[String: Any]] = [pasteboardDict]
 
             let pasteboardOptions = [
                 UIPasteboard.OptionsKey.expirationDate: Date().addingTimeInterval(60 * 5)
@@ -262,6 +307,58 @@ struct ShareSheet: View {
 
         let urlString = "sms:&body=\(shareText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
         if let url = URL(string: urlString) {
+            UIApplication.shared.open(url)
+            dismiss()
+        }
+    }
+
+    func shareViaWhatsApp() {
+        trackShare()
+
+        let encodedText = shareText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let whatsappURL = "whatsapp://send?text=\(encodedText)"
+
+        if let url = URL(string: whatsappURL), UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url)
+            dismiss()
+        } else {
+            // WhatsApp not installed, open App Store
+            if let appStoreURL = URL(string: "https://apps.apple.com/app/whatsapp-messenger/id310633997") {
+                UIApplication.shared.open(appStoreURL)
+            }
+        }
+    }
+
+    func shareViaFacebook() {
+        trackShare()
+
+        // Facebook sharing via URL scheme
+        let fbURL = "fb://facewebmodal/f?href=\(shareURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+
+        if let url = URL(string: fbURL), UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url)
+            dismiss()
+        } else {
+            // Facebook not installed, open web share
+            if let webURL = URL(string: "https://www.facebook.com/sharer/sharer.php?u=\(shareURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
+                UIApplication.shared.open(webURL)
+                dismiss()
+            }
+        }
+    }
+
+    func shareViaEmail() {
+        trackShare()
+
+        let subject = "Check out this home on Housers!"
+        let body = shareText
+
+        let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let encodedBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+
+        let mailURL = "mailto:?subject=\(encodedSubject)&body=\(encodedBody)"
+
+        if let url = URL(string: mailURL) {
             UIApplication.shared.open(url)
             dismiss()
         }

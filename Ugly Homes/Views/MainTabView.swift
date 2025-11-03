@@ -34,11 +34,13 @@ struct MainTabView: View {
                         .padding(.top, 10)
                 }
 
-            ProfileView()
-                .tabItem {
-                    Image(systemName: "person.circle.fill")
-                        .padding(.top, 10)
-                }
+            NavigationView {
+                ProfileView()
+            }
+            .tabItem {
+                Image(systemName: "person.circle.fill")
+                    .padding(.top, 10)
+            }
         }
         .accentColor(.orange)
     }

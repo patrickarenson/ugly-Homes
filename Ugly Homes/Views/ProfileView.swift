@@ -32,8 +32,7 @@ struct ProfileView: View {
     }
 
     var body: some View {
-        NavigationView {
-            ScrollView {
+        ScrollView {
                 VStack(spacing: 20) {
                     if let profile = profile {
                         // Profile header
@@ -70,8 +69,8 @@ struct ProfileView: View {
                                     )
                             }
 
-                            Text(profile.username)
-                                .font(.title3)
+                            Text("@\(profile.username)")
+                                .font(.system(size: 18))
                                 .fontWeight(.semibold)
 
                             if let market = profile.market, !market.isEmpty {
@@ -88,7 +87,7 @@ struct ProfileView: View {
                             if let bio = profile.bio {
                                 Text(bio)
                                     .font(.subheadline)
-                                    .foregroundColor(.gray)
+                                    .foregroundColor(.primary.opacity(0.8))
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal)
                             }
@@ -224,40 +223,39 @@ struct ProfileView: View {
                                 .foregroundColor(.gray)
                         }
                         .padding(.top, 100)
-                    }
                 }
             }
             .navigationTitle(isViewingOtherProfile ? (profile?.username ?? "Profile") : "Profile")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                // Only show menu when viewing own profile
-                if !isViewingOtherProfile {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Menu {
-                            Button(action: {
-                                showEditProfile = true
-                            }) {
-                                Label("Edit Profile", systemImage: "pencil")
-                            }
-
-                            Button(action: {
-                                showAccountSettings = true
-                            }) {
-                                Label("Account Settings", systemImage: "gearshape")
-                            }
-
-                            Button(role: .destructive, action: {
-                                signOut()
-                            }) {
-                                Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                                .font(.title3)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // Only show menu when viewing own profile
+            if !isViewingOtherProfile {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button(action: {
+                            showEditProfile = true
+                        }) {
+                            Label("Edit Profile", systemImage: "pencil")
                         }
+
+                        Button(action: {
+                            showAccountSettings = true
+                        }) {
+                            Label("Account Settings", systemImage: "gearshape")
+                        }
+
+                        Button(role: .destructive, action: {
+                            signOut()
+                        }) {
+                            Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.title3)
                     }
                 }
             }
+        }
             .sheet(isPresented: $showEditProfile) {
                 if let profile = profile {
                     EditProfileView(profile: profile)
@@ -304,7 +302,6 @@ struct ProfileView: View {
                     loadProfile()
                 }
             }
-        }
     }
 
     func loadProfile() {

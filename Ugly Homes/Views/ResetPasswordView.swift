@@ -1,17 +1,18 @@
 //
-//  ForgotPasswordView.swift
+//  ResetPasswordView.swift
 //  Ugly Homes
 //
-//  Forgot Password / Reset Password View
+//  Password Reset View
 //
 
 import SwiftUI
 
-struct ForgotPasswordView: View {
+struct ResetPasswordView: View {
     @Environment(\.dismiss) var dismiss
-    @Binding var showResetSuccess: Bool
+    @Binding var showSuccess: Bool
 
-    @State private var email = ""
+    @State private var newPassword = ""
+    @State private var confirmPassword = ""
     @State private var isLoading = false
     @State private var errorMessage = ""
 
@@ -38,7 +39,7 @@ struct ForgotPasswordView: View {
                             .fill(Color.white.opacity(0.2))
                             .frame(width: 100, height: 100)
 
-                        Image(systemName: "lock.rotation")
+                        Image(systemName: "lock.shield")
                             .font(.system(size: 50))
                             .foregroundColor(.white)
                     }
@@ -46,27 +47,35 @@ struct ForgotPasswordView: View {
 
                     // Title and description
                     VStack(spacing: 12) {
-                        Text("Reset Password")
+                        Text("Create New Password")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundColor(.white)
 
-                        Text("Enter your email address and we'll send you a link to reset your password.")
+                        Text("Enter your new password below.")
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.9))
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 20)
                     }
 
-                    // Email input
+                    // Password inputs
                     VStack(spacing: 16) {
                         HStack {
-                            Image(systemName: "envelope.fill")
+                            Image(systemName: "lock.fill")
                                 .foregroundColor(.gray)
                                 .frame(width: 20)
-                            TextField("Email", text: $email)
-                                .textInputAutocapitalization(.never)
-                                .keyboardType(.emailAddress)
-                                .autocorrectionDisabled()
+                            SecureField("New Password", text: $newPassword)
+                        }
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(12)
+                        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+
+                        HStack {
+                            Image(systemName: "lock.fill")
+                                .foregroundColor(.gray)
+                                .frame(width: 20)
+                            SecureField("Confirm Password", text: $confirmPassword)
                         }
                         .padding()
                         .background(Color.white)
@@ -84,15 +93,15 @@ struct ForgotPasswordView: View {
                                 .cornerRadius(8)
                         }
 
-                        // Send reset link button
-                        Button(action: sendResetLink) {
+                        // Reset password button
+                        Button(action: resetPassword) {
                             if isLoading {
                                 ProgressView()
                                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                     .frame(maxWidth: .infinity)
                                     .padding()
                             } else {
-                                Text("Send Reset Link")
+                                Text("Reset Password")
                                     .font(.system(size: 17, weight: .semibold))
                                     .foregroundColor(.white)
                                     .frame(maxWidth: .infinity)
@@ -111,8 +120,8 @@ struct ForgotPasswordView: View {
                         )
                         .cornerRadius(12)
                         .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
-                        .disabled(isLoading || email.isEmpty)
-                        .opacity(email.isEmpty ? 0.6 : 1.0)
+                        .disabled(isLoading || newPassword.isEmpty || confirmPassword.isEmpty)
+                        .opacity(newPassword.isEmpty || confirmPassword.isEmpty ? 0.6 : 1.0)
                     }
                     .padding(.horizontal, 32)
 
@@ -135,12 +144,19 @@ struct ForgotPasswordView: View {
         }
     }
 
-    func sendResetLink() {
-        guard !email.isEmpty else { return }
+    func resetPassword() {
+        guard !newPassword.isEmpty && !confirmPassword.isEmpty else {
+            errorMessage = "Please fill in all fields"
+            return
+        }
 
-        // Validate email format
-        guard email.contains("@") && email.contains(".") else {
-            errorMessage = "Please enter a valid email address"
+        guard newPassword == confirmPassword else {
+            errorMessage = "Passwords do not match"
+            return
+        }
+
+        guard newPassword.count >= 6 else {
+            errorMessage = "Password must be at least 6 characters"
             return
         }
 
@@ -149,23 +165,22 @@ struct ForgotPasswordView: View {
 
         Task {
             do {
-                // Send password reset email via Supabase with redirect URL
-                try await SupabaseManager.shared.client.auth.resetPasswordForEmail(
-                    email,
-                    redirectTo: URL(string: "uglyhomes://reset-password")
+                // Update password using Supabase
+                try await SupabaseManager.shared.client.auth.update(
+                    user: .init(password: newPassword)
                 )
 
-                print("✅ Password reset email sent to: \(email)")
+                print("✅ Password reset successful!")
 
                 await MainActor.run {
                     isLoading = false
                     dismiss()
-                    showResetSuccess = true
+                    showSuccess = true
                 }
             } catch {
-                print("❌ Error sending reset email: \(error)")
+                print("❌ Error resetting password: \(error)")
                 await MainActor.run {
-                    errorMessage = "Failed to send reset email. Please try again."
+                    errorMessage = "Failed to reset password. Please try again."
                     isLoading = false
                 }
             }
@@ -174,5 +189,5 @@ struct ForgotPasswordView: View {
 }
 
 #Preview {
-    ForgotPasswordView(showResetSuccess: .constant(false))
+    ResetPasswordView(showSuccess: .constant(false))
 }

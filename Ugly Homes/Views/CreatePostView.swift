@@ -7,6 +7,7 @@
 
 import SwiftUI
 import PhotosUI
+import UIKit
 
 struct CreatePostView: View {
     @Environment(\.dismiss) var dismiss
@@ -31,6 +32,7 @@ struct CreatePostView: View {
     @State private var isUploading = false
     @State private var isImporting = false
     @State private var errorMessage = ""
+    @State private var uploadProgress: String = ""
 
     // Open House feature
     @State private var enableOpenHouse = false
@@ -40,6 +42,7 @@ struct CreatePostView: View {
     @State private var stripePaymentId: String?
     @State private var showPaymentSheet = false
     @State private var isProcessingPayment = false
+    @State private var showCancelOpenHouseAlert = false
 
     enum ListingType: String, CaseIterable {
         case sale = "For Sale"
@@ -62,6 +65,15 @@ struct CreatePostView: View {
             _state = State(initialValue: home.state ?? "")
             _zipCode = State(initialValue: home.zipCode ?? "")
             _imageUrls = State(initialValue: home.imageUrls)
+
+            // Pre-populate open house fields if editing existing open house
+            if home.openHousePaid == true, let openHouseStart = home.openHouseDate {
+                _enableOpenHouse = State(initialValue: true)
+                _hasOpenHousePaid = State(initialValue: true)
+                _openHouseDate = State(initialValue: openHouseStart)
+                _openHouseEndDate = State(initialValue: home.openHouseEndDate ?? openHouseStart.addingTimeInterval(7200))
+                _stripePaymentId = State(initialValue: home.stripePaymentId)
+            }
         }
     }
 
@@ -480,70 +492,84 @@ struct CreatePostView: View {
                         }
                     }
 
-                    // Open House Section (only when creating new property)
-                    if editingHome == nil {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Divider()
-                                .padding(.vertical, 8)
+                    // Open House Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Divider()
+                            .padding(.vertical, 8)
 
-                            HStack {
-                                Image(systemName: "house.fill")
-                                    .foregroundColor(.orange)
-                                Text("Open House Feature")
-                                    .font(.headline)
-                                Spacer()
+                        HStack {
+                            Image(systemName: "house.fill")
+                                .foregroundColor(.orange)
+                            Text("Open House Feature")
+                                .font(.headline)
+                            Spacer()
+                            // Only show price for new posts
+                            if editingHome == nil {
                                 Text("$5")
                                     .font(.headline)
                                     .foregroundColor(.orange)
                             }
+                        }
 
+                        // Different description for editing vs creating
+                        if editingHome != nil && hasOpenHousePaid {
+                            Text("Edit your open house date and time")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
                             Text("Add a gold 'OPEN HOUSE' badge to your listing with the date and time")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
+                        }
 
+                        // Only show toggle for new posts or posts without open house
+                        if editingHome == nil || !hasOpenHousePaid {
                             Toggle("Enable Open House", isOn: $enableOpenHouse)
                                 .tint(.orange)
+                        }
 
-                            if enableOpenHouse {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    DatePicker("Start Date & Time", selection: $openHouseDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
-                                        .onChange(of: openHouseDate) { oldValue, newValue in
-                                            // Auto-adjust end date to be 6 hours later
-                                            openHouseEndDate = newValue.addingTimeInterval(21600) // 6 hours
-                                        }
+                        // Show date pickers if enabled OR if editing existing open house
+                        if enableOpenHouse || (editingHome != nil && hasOpenHousePaid) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                DatePicker("Start Date & Time", selection: $openHouseDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                                    .onChange(of: openHouseDate) { oldValue, newValue in
+                                        // Auto-adjust end date to be 6 hours later
+                                        openHouseEndDate = newValue.addingTimeInterval(21600) // 6 hours
+                                    }
 
-                                    DatePicker("End Date & Time", selection: $openHouseEndDate, in: openHouseDate...openHouseDate.addingTimeInterval(21600), displayedComponents: [.date, .hourAndMinute])
+                                DatePicker("End Date & Time", selection: $openHouseEndDate, in: openHouseDate...openHouseDate.addingTimeInterval(21600), displayedComponents: [.date, .hourAndMinute])
 
-                                    if !hasOpenHousePaid {
-                                        Button(action: processOpenHousePayment) {
-                                            HStack {
-                                                if isProcessingPayment {
-                                                    ProgressView()
-                                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                                    Text("Processing...")
-                                                        .fontWeight(.semibold)
-                                                } else {
-                                                    Image(systemName: "creditcard.fill")
-                                                    Text("Pay $5 via Apple Pay")
-                                                        .fontWeight(.semibold)
-                                                }
+                                if !hasOpenHousePaid {
+                                    Button(action: processOpenHousePayment) {
+                                        HStack {
+                                            if isProcessingPayment {
+                                                ProgressView()
+                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                Text("Processing...")
+                                                    .fontWeight(.semibold)
+                                            } else {
+                                                Image(systemName: "creditcard.fill")
+                                                Text("Pay $5 via Apple Pay")
+                                                    .fontWeight(.semibold)
                                             }
-                                            .foregroundColor(.white)
-                                            .frame(maxWidth: .infinity)
-                                            .padding()
-                                            .background(isProcessingPayment ? Color.gray : Color.orange)
-                                            .cornerRadius(10)
                                         }
-                                        .disabled(isProcessingPayment)
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(isProcessingPayment ? Color.gray : Color.orange)
+                                        .cornerRadius(10)
+                                    }
+                                    .disabled(isProcessingPayment)
 
-                                        // Show error if payment fails
-                                        if !errorMessage.isEmpty && (errorMessage.contains("Payment") || errorMessage.contains("Authentication") || errorMessage.contains("Error")) {
-                                            Text(errorMessage)
-                                                .font(.caption)
-                                                .foregroundColor(.red)
-                                                .padding(.top, 4)
-                                        }
-                                    } else {
+                                    // Show error if payment fails
+                                    if !errorMessage.isEmpty && (errorMessage.contains("Payment") || errorMessage.contains("Authentication") || errorMessage.contains("Error")) {
+                                        Text(errorMessage)
+                                            .font(.caption)
+                                            .foregroundColor(.red)
+                                            .padding(.top, 4)
+                                    }
+                                } else {
+                                    VStack(spacing: 12) {
                                         HStack {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .foregroundColor(.green)
@@ -555,20 +581,43 @@ struct CreatePostView: View {
                                         .frame(maxWidth: .infinity)
                                         .background(Color.green.opacity(0.1))
                                         .cornerRadius(8)
+
+                                        // Cancel Open House button
+                                        Button(action: {
+                                            showCancelOpenHouseAlert = true
+                                        }) {
+                                            HStack {
+                                                Image(systemName: "xmark.circle.fill")
+                                                Text("Cancel Open House")
+                                                    .fontWeight(.semibold)
+                                            }
+                                            .foregroundColor(.white)
+                                            .frame(maxWidth: .infinity)
+                                            .padding()
+                                            .background(Color.red)
+                                            .cornerRadius(10)
+                                        }
                                     }
                                 }
-                                .padding(.leading, 8)
                             }
+                            .padding(.leading, 8)
                         }
                     }
 
                     // Post button
                     Button(action: editingHome == nil ? createPost : updatePost) {
                         if isUploading {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .frame(maxWidth: .infinity)
-                                .padding()
+                            HStack(spacing: 12) {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                if !uploadProgress.isEmpty {
+                                    Text(uploadProgress)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.white)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
                         } else {
                             Text(editingHome == nil ? "Post Property" : "Update Property")
                                 .fontWeight(.semibold)
@@ -592,6 +641,14 @@ struct CreatePostView: View {
                     }
                 }
             }
+            .alert("Cancel Open House?", isPresented: $showCancelOpenHouseAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Yes, Cancel Open House", role: .destructive) {
+                    cancelOpenHouse()
+                }
+            } message: {
+                Text("This will notify all users who saved this open house. This action cannot be undone.")
+            }
         }
     }
 
@@ -604,16 +661,20 @@ struct CreatePostView: View {
             do {
                 print("🔄 Starting import from URL: \(listingURL)")
 
-                // Call the scraping API (real endpoint - may be blocked by anti-bot protection)
-                // Use localhost for simulator, or your Mac's IP for physical device
-                guard let apiURL = URL(string: "http://10.2.224.251:3000/api/scrape-listing") else {
-                    throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid API URL"])
+                // Call the optional scraping API for auto-import
+                // NOTE: This is optional - if unavailable, users can fill form manually
+                // For development: use localhost:3000 in simulator, or your Mac's IP for physical device
+                // For production: replace with your deployed API endpoint
+                let apiEndpoint = "http://10.2.224.251:3000/api/scrape-listing" // TODO: Replace with production URL
+
+                guard let apiURL = URL(string: apiEndpoint) else {
+                    throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Import service misconfigured"])
                 }
 
                 var request = URLRequest(url: apiURL)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.timeoutInterval = 60 // 60 second timeout for API calls
+                request.timeoutInterval = 15 // 15 second timeout - fail fast if service is down
 
                 let body = ["url": listingURL]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -729,15 +790,24 @@ struct CreatePostView: View {
                 }
 
             } catch let error as NSError {
-                print("❌ Error importing listing: \(error)")
-                print("❌ Error details: \(error.localizedDescription)")
+                print("⚠️ Import failed (non-critical): \(error.localizedDescription)")
 
+                // Friendly error message - import is optional
                 if error.domain == NSURLErrorDomain && error.code == NSURLErrorCannotConnectToHost {
-                    errorMessage = "Cannot connect to server. Make sure API is running at localhost:3000"
+                    errorMessage = "Import service unavailable - fill out form manually instead"
                 } else if error.domain == NSURLErrorDomain && error.code == NSURLErrorTimedOut {
-                    errorMessage = "Request timed out. Server may be slow or unresponsive."
+                    errorMessage = "Import timed out - fill out form manually instead"
                 } else {
-                    errorMessage = error.localizedDescription
+                    errorMessage = "Import failed - fill out form manually instead"
+                }
+
+                print("ℹ️ User can continue posting manually")
+
+                // Auto-dismiss error after 5 seconds so it doesn't block the user
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    if self.errorMessage.contains("Import") {
+                        self.errorMessage = ""
+                    }
                 }
 
                 isImporting = false
@@ -757,13 +827,25 @@ struct CreatePostView: View {
                 // Upload images to Supabase Storage (if manually selected)
                 var finalImageUrls: [String] = imageUrls // Start with scraped URLs if any
                 for (index, data) in imageData.enumerated() {
-                    let fileName = "\(userId.uuidString)/\(UUID().uuidString).jpg"
+                    // Update progress on main thread
+                    await MainActor.run {
+                        uploadProgress = "Uploading image \(index + 1)/\(imageData.count)..."
+                    }
 
+                    // Compress image before upload
+                    let compressedData: Data
+                    if let image = UIImage(data: data) {
+                        compressedData = compressImage(image) ?? data
+                    } else {
+                        compressedData = data
+                    }
+
+                    let fileName = "\(userId.uuidString)/\(UUID().uuidString).jpg"
                     print("📷 Uploading image \(index + 1)/\(imageData.count)")
 
                     try await SupabaseManager.shared.client.storage
                         .from("home-images")
-                        .upload(fileName, data: data, options: .init(contentType: "image/jpeg"))
+                        .upload(fileName, data: compressedData, options: .init(contentType: "image/jpeg"))
 
                     let publicURL = try SupabaseManager.shared.client.storage
                         .from("home-images")
@@ -771,6 +853,11 @@ struct CreatePostView: View {
 
                     finalImageUrls.append(publicURL.absoluteString)
                     print("✅ Image uploaded: \(publicURL.absoluteString)")
+                }
+
+                // Clear progress message
+                await MainActor.run {
+                    uploadProgress = ""
                 }
 
                 // Generate title from address or price
@@ -828,12 +915,43 @@ struct CreatePostView: View {
                     stripe_payment_id: (enableOpenHouse && hasOpenHousePaid) ? stripePaymentId : nil
                 )
 
-                try await SupabaseManager.shared.client
+                let response: [Home] = try await SupabaseManager.shared.client
                     .from("homes")
                     .insert(newHome)
+                    .select()
                     .execute()
+                    .value
 
                 print("✅ Post created successfully!")
+
+                // Auto-post description as first comment if description exists
+                if let createdHome = response.first, !description.isEmpty {
+                    print("💬 Auto-posting description as first comment...")
+                    struct NewComment: Encodable {
+                        let home_id: String
+                        let user_id: String
+                        let comment_text: String
+                    }
+
+                    let comment = NewComment(
+                        home_id: createdHome.id.uuidString,
+                        user_id: userId.uuidString,
+                        comment_text: description
+                    )
+
+                    do {
+                        try await SupabaseManager.shared.client
+                            .from("comments")
+                            .insert(comment)
+                            .execute()
+
+                        print("✅ Description posted as first comment!")
+                    } catch {
+                        // Don't fail the whole post creation if comment fails
+                        print("⚠️ Warning: Failed to post description as comment: \(error)")
+                    }
+                }
+
                 isUploading = false
                 dismiss()
 
@@ -859,12 +977,25 @@ struct CreatePostView: View {
                 // Upload new images to Supabase Storage (if any manually selected)
                 var finalImageUrls: [String] = imageUrls // Start with existing/scraped URLs
                 for (index, data) in imageData.enumerated() {
+                    // Update progress on main thread
+                    await MainActor.run {
+                        uploadProgress = "Uploading image \(index + 1)/\(imageData.count)..."
+                    }
+
+                    // Compress image before upload
+                    let compressedData: Data
+                    if let image = UIImage(data: data) {
+                        compressedData = compressImage(image) ?? data
+                    } else {
+                        compressedData = data
+                    }
+
                     let fileName = "\(userId.uuidString)/\(UUID().uuidString).jpg"
                     print("📷 Uploading new image \(index + 1)/\(imageData.count)")
 
                     try await SupabaseManager.shared.client.storage
                         .from("home-images")
-                        .upload(fileName, data: data, options: .init(contentType: "image/jpeg"))
+                        .upload(fileName, data: compressedData, options: .init(contentType: "image/jpeg"))
 
                     let publicURL = try SupabaseManager.shared.client.storage
                         .from("home-images")
@@ -872,6 +1003,11 @@ struct CreatePostView: View {
 
                     finalImageUrls.append(publicURL.absoluteString)
                     print("✅ Image uploaded: \(publicURL.absoluteString)")
+                }
+
+                // Clear progress message
+                await MainActor.run {
+                    uploadProgress = ""
                 }
 
                 // Generate title from address or price
@@ -927,7 +1063,7 @@ struct CreatePostView: View {
                 isUploading = false
 
                 // Notify feed to refresh
-                NotificationCenter.default.post(name: NSNotification.Name("RefreshFeed"), object: nil)
+                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshFeed"), object: nil)
 
                 dismiss()
 
@@ -973,6 +1109,128 @@ struct CreatePostView: View {
                 }
             }
         }
+    }
+
+    // Cancel open house
+    func cancelOpenHouse() {
+        guard let home = editingHome else {
+            print("❌ No home to cancel open house for")
+            return
+        }
+
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                // Check if user owns this post
+                if home.userId != userId {
+                    print("❌ User does not own this post")
+                    return
+                }
+
+                print("🚫 Cancelling open house for home: \(home.id)")
+
+                // Get all users who saved this open house
+                struct SavedBy: Codable {
+                    let userId: UUID
+
+                    enum CodingKeys: String, CodingKey {
+                        case userId = "user_id"
+                    }
+                }
+
+                let savedByUsers: [SavedBy] = try await SupabaseManager.shared.client
+                    .from("saved_open_houses")
+                    .select("user_id")
+                    .eq("home_id", value: home.id.uuidString)
+                    .execute()
+                    .value
+
+                print("📢 Notifying \(savedByUsers.count) users who saved this open house")
+
+                // Create notifications for each user who saved it
+                for savedUser in savedByUsers {
+                    struct NewNotification: Encodable {
+                        let user_id: String
+                        let type: String
+                        let title: String
+                        let message: String
+                        let home_id: String
+                    }
+
+                    let address = home.address ?? "a property"
+                    let notification = NewNotification(
+                        user_id: savedUser.userId.uuidString,
+                        type: "open_house_cancelled",
+                        title: "Open House Cancelled",
+                        message: "The open house at \(address) has been cancelled by the owner.",
+                        home_id: home.id.uuidString
+                    )
+
+                    try await SupabaseManager.shared.client
+                        .from("notifications")
+                        .insert(notification)
+                        .execute()
+                }
+
+                // Update the home to remove open house info
+                struct OpenHouseUpdate: Encodable {
+                    let open_house_paid: Bool?
+                    let open_house_date: Date?
+                    let open_house_end_date: Date?
+                    let stripe_payment_id: String?
+                }
+
+                let update = OpenHouseUpdate(
+                    open_house_paid: nil,
+                    open_house_date: nil,
+                    open_house_end_date: nil,
+                    stripe_payment_id: nil
+                )
+
+                try await SupabaseManager.shared.client
+                    .from("homes")
+                    .update(update)
+                    .eq("id", value: home.id.uuidString)
+                    .execute()
+
+                print("✅ Open house cancelled successfully")
+
+                // Update local state
+                await MainActor.run {
+                    hasOpenHousePaid = false
+                    enableOpenHouse = false
+                    stripePaymentId = nil
+                }
+
+                // Notify other views to refresh
+                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshOpenHouseList"), object: nil)
+
+                // Dismiss this view
+                await MainActor.run {
+                    dismiss()
+                }
+            } catch {
+                print("❌ Error cancelling open house: \(error)")
+                await MainActor.run {
+                    errorMessage = "Error cancelling open house: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    // Image compression helper function
+    func compressImage(_ image: UIImage) -> Data? {
+        // Start with high quality (0.9) to preserve image quality
+        if let data = image.jpegData(compressionQuality: 0.9) {
+            // Only compress further if image is very large (> 5MB)
+            if data.count > 5_000_000 {
+                // Use 0.85 quality - still very high quality but smaller size
+                return image.jpegData(compressionQuality: 0.85)
+            }
+            return data
+        }
+        return nil
     }
 }
 

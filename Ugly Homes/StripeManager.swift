@@ -15,9 +15,9 @@ class StripeManager: ObservableObject {
     // MARK: - Configuration
     // Set to false for production, true for testing
     private let useTestMode = true  // Using test mode for development
-    // Stripe publishable keys from realtorDocs account
+    // Stripe publishable keys for Ugly Homes
     private let livePublishableKey = "pk_live_51IQ4KFINuCqfox5ANOT1zQgE5WDR8mDAKixO5wP80hu6CgHLbi6zi04tDBW8WiYPhYlBOPZYcmOIWIXzPiGXvC5H00GUzwaHNw"
-    private let testPublishableKey = "pk_test_51IQ4KFINuCqfox5Aw7pPA1TcK2kTYve8mB2wm7zo13detBUg6c1eeZgnrWa8yKi1ltZjvkH5i9ZjLbD1yQas63eJ00Hg9v0Hbq"
+    private let testPublishableKey = "pk_test_51IQ4KFINuCqfox5Aw7pPA1TcK2kTYve8mB2wm7zo13detBUg6c1eeZgnrWa8yKil1tZjvkH5i9ZjLbDlyQas63eJ00Hg9v0Hbq"
 
     private var publishableKey: String {
         return useTestMode ? testPublishableKey : livePublishableKey
@@ -50,7 +50,13 @@ class StripeManager: ObservableObject {
             "currency": "usd",
             "userId": userId,
             "homeId": homeId,
-            "description": "Ugly Homes - Open House Feature"
+            "description": "Ugly Homes - Open House Feature",
+            "metadata": [
+                "app": "uglyhomes",
+                "feature": "open_house",
+                "user_id": userId,
+                "home_id": homeId
+            ]
         ]
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -85,8 +91,8 @@ class StripeManager: ObservableObject {
         var configuration = PaymentSheet.Configuration()
         configuration.merchantDisplayName = "Ugly Homes"
 
-        // Optional: Disable Apple Pay if merchant ID isn't set up
-        // configuration.applePay = .init(merchantId: "merchant.com.homechat.app", merchantCountryCode: "US")
+        // Enable Apple Pay
+        configuration.applePay = .init(merchantId: "merchant.com.homechat.app", merchantCountryCode: "US")
 
         configuration.defaultBillingDetails.name = ""
         configuration.allowsDelayedPaymentMethods = false

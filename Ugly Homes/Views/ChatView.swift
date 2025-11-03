@@ -20,22 +20,56 @@ struct ChatView: View {
     @State private var isLoading = false
     @State private var isSending = false
 
+    init(otherUserId: UUID, otherUsername: String, otherAvatarUrl: String?) {
+        self.otherUserId = otherUserId
+        self.otherUsername = otherUsername
+        self.otherAvatarUrl = otherAvatarUrl
+        print("🎬 ChatView initialized for \(otherUsername)")
+    }
+
     var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                // Messages list
+        VStack(spacing: 0) {
+            // Messages list
+            if isLoading {
+                VStack {
+                    Spacer()
+                    ProgressView()
+                        .scaleEffect(1.5)
+                    Text("Loading conversation...")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding(.top, 8)
+                    Spacer()
+                }
+            } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(messages) { message in
-                                MessageBubble(
-                                    message: message,
-                                    isFromCurrentUser: message.senderId == currentUserId
-                                )
-                                .id(message.id)
+                        if messages.isEmpty {
+                            VStack(spacing: 12) {
+                                Image(systemName: "bubble.left.and.bubble.right")
+                                    .font(.system(size: 60))
+                                    .foregroundColor(.gray.opacity(0.5))
+                                Text("No messages yet")
+                                    .font(.headline)
+                                    .foregroundColor(.gray)
+                                Text("Send a message to start the conversation")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
                             }
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 100)
+                        } else {
+                            LazyVStack(spacing: 12) {
+                                ForEach(messages) { message in
+                                    MessageBubble(
+                                        message: message,
+                                        isFromCurrentUser: message.senderId == currentUserId
+                                    )
+                                    .id(message.id)
+                                }
+                            }
+                            .padding()
                         }
-                        .padding()
                     }
                     .onChange(of: messages.count) { oldCount, newCount in
                         if let lastMessage = messages.last {
@@ -45,6 +79,7 @@ struct ChatView: View {
                         }
                     }
                 }
+            }
 
                 // Message input
                 HStack(spacing: 12) {
@@ -84,7 +119,6 @@ struct ChatView: View {
             .onAppear {
                 loadChat()
             }
-        }
     }
 
     func loadChat() {
@@ -94,9 +128,12 @@ struct ChatView: View {
             do {
                 // Get current user ID
                 let userId = try await SupabaseManager.shared.client.auth.session.user.id
-                currentUserId = userId
+                await MainActor.run {
+                    currentUserId = userId
+                }
 
-                print("📥 Loading or creating conversation with \(otherUsername)...")
+                print("📥 Loading or creating conversation with \(otherUsername) (ID: \(otherUserId))...")
+                print("📥 Current user ID: \(userId)")
 
                 // Get or create conversation
                 struct ConversationIdResponse: Decodable {
@@ -104,12 +141,17 @@ struct ChatView: View {
                 }
 
                 let response: ConversationIdResponse = try await SupabaseManager.shared.client
-                    .rpc("get_or_create_conversation", params: ["other_user_id": otherUserId.uuidString])
+                    .rpc("get_or_create_conversation", params: [
+                        "current_user_id": userId.uuidString,
+                        "other_user_id": otherUserId.uuidString
+                    ])
                     .single()
                     .execute()
                     .value
 
-                conversationId = response.id
+                await MainActor.run {
+                    conversationId = response.id
+                }
                 print("✅ Conversation ID: \(response.id)")
 
                 // Load messages
@@ -118,10 +160,15 @@ struct ChatView: View {
                 // Mark messages as read
                 try await markMessagesAsRead()
 
-                isLoading = false
+                await MainActor.run {
+                    isLoading = false
+                }
             } catch {
                 print("❌ Error loading chat: \(error)")
-                isLoading = false
+                print("❌ Error details: \(error.localizedDescription)")
+                await MainActor.run {
+                    isLoading = false
+                }
             }
         }
     }
@@ -144,22 +191,40 @@ struct ChatView: View {
     }
 
     func markMessagesAsRead() async throws {
-        guard let conversationId = conversationId, let currentUserId = currentUserId else { return }
+        guard let conversationId = conversationId, let currentUserId = currentUserId else {
+            print("⚠️ Cannot mark messages as read - missing conversationId or currentUserId")
+            return
+        }
+
+        print("📖 Marking messages as read for conversation: \(conversationId.uuidString)")
 
         // Mark all unread messages from other user as read
-        try await SupabaseManager.shared.client
+        let response = try await SupabaseManager.shared.client
             .from("messages")
             .update(["is_read": true])
             .eq("conversation_id", value: conversationId.uuidString)
             .eq("is_read", value: false)
             .neq("sender_id", value: currentUserId.uuidString)
             .execute()
+
+        print("✅ Messages marked as read - Response: \(response)")
     }
 
     func sendMessage() {
-        guard !newMessage.isEmpty,
-              let conversationId = conversationId,
-              let currentUserId = currentUserId else { return }
+        guard !newMessage.isEmpty else {
+            print("❌ Message is empty")
+            return
+        }
+
+        guard let conversationId = conversationId else {
+            print("❌ No conversation ID")
+            return
+        }
+
+        guard let currentUserId = currentUserId else {
+            print("❌ No current user ID")
+            return
+        }
 
         let messageText = newMessage
         newMessage = ""
@@ -167,7 +232,8 @@ struct ChatView: View {
 
         Task {
             do {
-                print("📤 Sending message...")
+                print("📤 Sending message to conversation: \(conversationId)")
+                print("📤 Message content: \(messageText)")
 
                 struct NewMessage: Encodable {
                     let conversation_id: String
@@ -181,24 +247,26 @@ struct ChatView: View {
                     content: messageText
                 )
 
-                let response: Message = try await SupabaseManager.shared.client
+                try await SupabaseManager.shared.client
                     .from("messages")
                     .insert(newMsg)
-                    .select()
-                    .single()
                     .execute()
-                    .value
 
-                print("✅ Message sent")
+                print("✅ Message sent successfully!")
 
-                // Add to local messages
-                messages.append(response)
+                // Reload messages to get the new one
+                try await loadMessages()
 
-                isSending = false
+                await MainActor.run {
+                    isSending = false
+                }
             } catch {
                 print("❌ Error sending message: \(error)")
-                newMessage = messageText // Restore message on error
-                isSending = false
+                print("❌ Error details: \(error.localizedDescription)")
+                await MainActor.run {
+                    newMessage = messageText // Restore message on error
+                    isSending = false
+                }
             }
         }
     }

@@ -7,11 +7,21 @@
 
 import SwiftUI
 
+struct SelectedUserInfo: Identifiable, Equatable {
+    let id = UUID()
+    let userId: UUID
+    let username: String
+    let avatarUrl: String?
+
+    static func == (lhs: SelectedUserInfo, rhs: SelectedUserInfo) -> Bool {
+        return lhs.id == rhs.id
+    }
+}
+
 struct MessagesView: View {
     @State private var conversations: [ConversationPreview] = []
     @State private var isLoading = false
-    @State private var selectedConversation: ConversationPreview?
-    @State private var showChat = false
+    @State private var selectedUserInfo: SelectedUserInfo?
     @State private var showNewMessage = false
 
     var body: some View {
@@ -37,8 +47,13 @@ struct MessagesView: View {
                     List {
                         ForEach(conversations) { conversation in
                             Button(action: {
-                                selectedConversation = conversation
-                                showChat = true
+                                print("🔵 Conversation tapped: \(conversation.otherUsername)")
+                                selectedUserInfo = SelectedUserInfo(
+                                    userId: conversation.otherUserId,
+                                    username: conversation.otherUsername,
+                                    avatarUrl: conversation.otherAvatarUrl
+                                )
+                                print("🔵 Set selectedUserInfo - username: \(conversation.otherUsername)")
                             }) {
                                 ConversationRow(conversation: conversation)
                             }
@@ -67,17 +82,38 @@ struct MessagesView: View {
             .refreshable {
                 loadConversations()
             }
-            .sheet(isPresented: $showChat) {
-                if let conversation = selectedConversation {
+            .sheet(item: $selectedUserInfo) { userInfo in
+                let _ = print("🟢 Sheet presenting from list for: \(userInfo.username)")
+                NavigationView {
                     ChatView(
-                        otherUserId: conversation.otherUserId,
-                        otherUsername: conversation.otherUsername,
-                        otherAvatarUrl: conversation.otherAvatarUrl
+                        otherUserId: userInfo.userId,
+                        otherUsername: userInfo.username,
+                        otherAvatarUrl: userInfo.avatarUrl
                     )
+                }
+            }
+            .onChange(of: selectedUserInfo) { oldValue, newValue in
+                // Reload conversations when chat is dismissed (unread count should update)
+                if oldValue != nil && newValue == nil {
+                    print("🔄 Chat dismissed, reloading conversations to update unread count")
+                    // Add small delay to ensure database view is updated
+                    Task {
+                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                        await MainActor.run {
+                            loadConversations()
+                        }
+                    }
                 }
             }
             .sheet(isPresented: $showNewMessage) {
                 NewMessageView()
+            }
+            .onChange(of: showNewMessage) { oldValue, newValue in
+                // Reload conversations when new message view is dismissed
+                if oldValue && !newValue {
+                    print("🔄 New message view dismissed, reloading conversations")
+                    loadConversations()
+                }
             }
         }
     }
@@ -97,6 +133,12 @@ struct MessagesView: View {
                     .value
 
                 print("✅ Loaded \(response.count) conversations")
+
+                // Debug: Print unread counts
+                for conv in response {
+                    print("  📬 \(conv.otherUsername): \(conv.unreadCount) unread")
+                }
+
                 conversations = response
                 isLoading = false
             } catch {
@@ -209,7 +251,9 @@ struct NewMessageView: View {
     @State private var users: [Profile] = []
     @State private var searchText = ""
     @State private var isLoading = false
-    @State private var selectedUser: Profile?
+    @State private var selectedUserId: UUID?
+    @State private var selectedUsername: String?
+    @State private var selectedAvatarUrl: String?
     @State private var showChat = false
 
     var filteredUsers: [Profile] {
@@ -257,8 +301,13 @@ struct NewMessageView: View {
                     List {
                         ForEach(filteredUsers) { user in
                             Button(action: {
-                                selectedUser = user
+                                print("🔵 User selected: \(user.username)")
+                                selectedUserId = user.id
+                                selectedUsername = user.username
+                                selectedAvatarUrl = user.avatarUrl
+                                print("🔵 Set user info - ID: \(user.id)")
                                 showChat = true
+                                print("🔵 showChat = \(showChat)")
                             }) {
                                 HStack(spacing: 12) {
                                     // Profile photo
@@ -314,15 +363,21 @@ struct NewMessageView: View {
                 loadUsers()
             }
             .sheet(isPresented: $showChat) {
-                if let user = selectedUser {
-                    ChatView(
-                        otherUserId: user.id,
-                        otherUsername: user.username,
-                        otherAvatarUrl: user.avatarUrl
-                    )
+                if let userId = selectedUserId, let username = selectedUsername {
+                    let _ = print("🟢 Sheet presenting in NewMessageView for: \(username)")
+                    NavigationView {
+                        ChatView(
+                            otherUserId: userId,
+                            otherUsername: username,
+                            otherAvatarUrl: selectedAvatarUrl
+                        )
+                    }
                     .onDisappear {
                         dismiss()
                     }
+                } else {
+                    let _ = print("🔴 selectedUserId or selectedUsername is nil in NewMessageView!")
+                    Text("Error loading user")
                 }
             }
         }

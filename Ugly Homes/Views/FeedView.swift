@@ -13,6 +13,8 @@ struct FeedView: View {
     @State private var isLoading = true
     @State private var showCreatePost = false
     @State private var searchText = ""
+    @State private var showNotifications = false
+    @State private var unreadNotificationsCount = 0
 
     var filteredHomes: [Home] {
         if searchText.isEmpty {
@@ -49,6 +51,29 @@ struct FeedView: View {
             VStack(spacing: 0) {
                 // Search bar
                 HStack(spacing: 12) {
+                    // Notifications button with badge
+                    Button(action: {
+                        showNotifications = true
+                    }) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "bell.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.primary)
+
+                            // Badge showing unread count
+                            if unreadNotificationsCount > 0 {
+                                Text("\(unreadNotificationsCount)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2)
+                                    .background(Color.orange)
+                                    .clipShape(Capsule())
+                                    .offset(x: 8, y: -8)
+                            }
+                        }
+                    }
+
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
@@ -132,20 +157,33 @@ struct FeedView: View {
             .sheet(isPresented: $showCreatePost) {
                 CreatePostView()
             }
+            .sheet(isPresented: $showNotifications) {
+                NotificationsView()
+            }
             .onChange(of: showCreatePost) { oldValue, newValue in
                 if !newValue {
                     // Refresh feed when create post sheet is dismissed
                     loadHomes()
                 }
             }
+            .onChange(of: showNotifications) { oldValue, newValue in
+                if !newValue {
+                    // Refresh unread count when notifications sheet is dismissed
+                    loadUnreadNotificationsCount()
+                }
+            }
             .onAppear {
                 loadHomes()
+                loadUnreadNotificationsCount()
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshFeed"))) { _ in
+            .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("RefreshFeed"))) { _ in
                 loadHomes()
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshProfile"))) { _ in
+            .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("RefreshProfile"))) { _ in
                 loadHomes() // Reload to get updated profile photos
+            }
+            .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("RefreshNotifications"))) { _ in
+                loadUnreadNotificationsCount()
             }
         }
     }
@@ -347,6 +385,26 @@ struct FeedView: View {
             }
         }
     }
+
+    func loadUnreadNotificationsCount() {
+        Task {
+            do {
+                let response: [AppNotification] = try await SupabaseManager.shared.client
+                    .from("notifications")
+                    .select()
+                    .eq("is_read", value: false)
+                    .execute()
+                    .value
+
+                await MainActor.run {
+                    unreadNotificationsCount = response.count
+                    print("🔔 Unread notifications: \(response.count)")
+                }
+            } catch {
+                print("❌ Error loading unread notifications count: \(error)")
+            }
+        }
+    }
 }
 
 struct HomePostView: View {
@@ -374,7 +432,11 @@ struct HomePostView: View {
     @State private var downVoted = false
     @State private var estimatedPrice: Int
 
-    init(home: Home, showSoldOptions: Bool = false, preloadedUserId: UUID? = nil) {
+    // Open house saved state
+    @State private var isOpenHouseSaved = false
+    @State private var showOpenHouseSavedMessage = false
+
+    init(home: Home, showSoldOptions: Bool = true, preloadedUserId: UUID? = nil) {
         self.home = home
         self.showSoldOptions = showSoldOptions
         self.preloadedUserId = preloadedUserId
@@ -433,23 +495,27 @@ struct HomePostView: View {
                 }) {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
-                            Text("@\(home.profile?.username ?? "user")")
+                            Text("\(home.profile?.username ?? "user")")
                                 .font(.system(size: 13))
                                 .fontWeight(.semibold)
                                 .foregroundColor(.primary)
 
-                        // Sold/Leased badge
+                        // Sold/Leased/Pending badge
                         if let status = soldStatus {
                             Text(status.uppercased())
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(status == "sold" ? Color.red : Color.blue)
+                                .background(
+                                    status == "sold" ? Color.red :
+                                    status == "leased" ? Color.blue :
+                                    status == "pending" ? Color.yellow : Color.gray
+                                )
                                 .cornerRadius(4)
                         }
 
-                        // Open House badge (gold) - only show if date hasn't passed
+                        // Open House badge (green) - only show if date hasn't passed
                         if let openHouseDate = home.openHouseDate, home.openHousePaid == true {
                             let endDate = home.openHouseEndDate ?? openHouseDate.addingTimeInterval(7200) // Default 2 hours
                             if endDate > Date() {
@@ -458,7 +524,7 @@ struct HomePostView: View {
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(Color(red: 1.0, green: 0.84, blue: 0.0)) // Gold
+                                    .background(Color.green)
                                     .cornerRadius(4)
                             }
                         }
@@ -488,8 +554,8 @@ struct HomePostView: View {
                         let endDate = home.openHouseEndDate ?? openHouseDate.addingTimeInterval(7200)
                         if endDate > Date() {
                             Text("Open House: \(formatOpenHouse(date: openHouseDate, endDate: home.openHouseEndDate))")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.green)
                         }
                     }
                     }
@@ -497,11 +563,14 @@ struct HomePostView: View {
 
                 Spacer()
 
-                Button(action: {
-                    showMenu = true
-                }) {
-                    Image(systemName: "ellipsis")
-                        .foregroundColor(.black)
+                // Only show menu button if current user owns the post
+                if currentUserId == home.userId {
+                    Button(action: {
+                        showMenu = true
+                    }) {
+                        Image(systemName: "ellipsis")
+                            .foregroundColor(.black)
+                    }
                 }
             }
             .padding(.horizontal)
@@ -554,6 +623,34 @@ struct HomePostView: View {
                                 .shadow(radius: 10)
                                 .scaleEffect(showHeartAnimation ? 1.0 : 0.5)
                                 .opacity(showHeartAnimation ? 1.0 : 0.0)
+                        }
+
+                        // Calendar button overlay (top-right) - only for open houses
+                        if let openHouseDate = home.openHouseDate, home.openHousePaid == true {
+                            let endDate = home.openHouseEndDate ?? openHouseDate.addingTimeInterval(7200)
+                            if endDate > Date() {
+                                VStack {
+                                    HStack {
+                                        Spacer()
+                                        Button(action: {
+                                            toggleOpenHouseSaved()
+                                        }) {
+                                            Image(systemName: isOpenHouseSaved ? "calendar.badge.checkmark" : "calendar.badge.plus")
+                                                .font(.system(size: 28))
+                                                .foregroundColor(.white)
+                                                .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+                                                .padding(12)
+                                                .background(
+                                                    Circle()
+                                                        .fill(isOpenHouseSaved ? Color.green.opacity(0.9) : Color.green.opacity(0.7))
+                                                )
+                                        }
+                                        .padding(.trailing, 12)
+                                        .padding(.top, 12)
+                                    }
+                                    Spacer()
+                                }
+                            }
                         }
                     }
                 }
@@ -638,32 +735,38 @@ struct HomePostView: View {
 
                 // User-Generated Pricing Feature - Right Side
                 if home.price != nil {
-                    HStack(spacing: 4) {
-                        // Up arrow button
-                        Button(action: {
-                            submitPriceVote(voteType: "up")
-                        }) {
-                            Image(systemName: "arrow.up")
-                                .font(.title3)
-                                .foregroundColor(upVoted ? .green : .gray)
-                        }
-                        .disabled(upVoted || downVoted)
+                    VStack(spacing: 2) {
+                        Text("Housers Estimate")
+                            .font(.system(size: 9))
+                            .foregroundColor(.gray)
 
-                        // Estimated price in orange (bold with commas)
-                        Text(formatPrice(estimatedPrice))
-                            .font(.subheadline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.orange)
+                        HStack(spacing: 4) {
+                            // Up arrow button
+                            Button(action: {
+                                submitPriceVote(voteType: "up")
+                            }) {
+                                Image(systemName: "arrow.up")
+                                    .font(.title3)
+                                    .foregroundColor(upVoted ? .green : .gray)
+                            }
+                            .disabled(upVoted || downVoted)
 
-                        // Down arrow button
-                        Button(action: {
-                            submitPriceVote(voteType: "down")
-                        }) {
-                            Image(systemName: "arrow.down")
-                                .font(.title3)
-                                .foregroundColor(downVoted ? .red : .gray)
+                            // Estimated price in orange (bold with commas)
+                            Text(formatPrice(estimatedPrice))
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.orange)
+
+                            // Down arrow button
+                            Button(action: {
+                                submitPriceVote(voteType: "down")
+                            }) {
+                                Image(systemName: "arrow.down")
+                                    .font(.title3)
+                                    .foregroundColor(downVoted ? .red : .gray)
+                            }
+                            .disabled(upVoted || downVoted)
                         }
-                        .disabled(upVoted || downVoted)
                     }
                 }
             }
@@ -679,7 +782,7 @@ struct HomePostView: View {
                         ProfileView(viewingUserId: profile.id)
                     }
                 }) {
-                    Text("@\(home.profile?.username ?? "user")")
+                    Text("\(home.profile?.username ?? "user")")
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
                 }
@@ -719,7 +822,7 @@ struct HomePostView: View {
                 }
 
                 if let price = home.price {
-                    Text(formatPriceFromDecimal(price))
+                    Text("Listed for \(formatPriceFromDecimal(price))")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.primary)
                 }
@@ -771,31 +874,53 @@ struct HomePostView: View {
             }
             // Load existing price vote and community price
             loadPriceVote()
+            // Check if open house is saved
+            checkIfOpenHouseSaved()
         }
         .confirmationDialog("Post Options", isPresented: $showMenu, titleVisibility: .hidden) {
-            Button("Edit Post") {
-                showEditPost = true
-            }
-
-            // Show sold/leased options only in profile view
-            if showSoldOptions && soldStatus == nil {
-                Button("Mark as Leased") {
-                    markAsSoldOrLeased(status: "leased")
+            let _ = print("🔧 Menu opened - currentUserId: \(currentUserId?.uuidString ?? "nil"), homeUserId: \(home.userId.uuidString), showSoldOptions: \(showSoldOptions), soldStatus: \(soldStatus ?? "nil")")
+            // Only show edit/delete if current user owns the post
+            if currentUserId == home.userId {
+                Button("Edit Post") {
+                    showEditPost = true
                 }
-                Button("Mark as Sold") {
-                    markAsSoldOrLeased(status: "sold")
-                }
-            }
 
-            // Option to remove sold/leased status
-            if showSoldOptions && soldStatus != nil {
-                Button("Remove \(soldStatus?.capitalized ?? "") Status") {
-                    removeSoldStatus()
+                // Show sold/leased/pending options only in profile view
+                if showSoldOptions && soldStatus == nil {
+                    Button("Mark as Pending") {
+                        print("🟡 Mark as Pending button tapped")
+                        markAsSoldOrLeased(status: "pending")
+                    }
+                    Button("Mark as Leased") {
+                        print("🔵 Mark as Leased button tapped")
+                        markAsSoldOrLeased(status: "leased")
+                    }
+                    Button("Mark as Sold") {
+                        print("🔴 Mark as Sold button tapped")
+                        markAsSoldOrLeased(status: "sold")
+                    }
                 }
-            }
 
-            Button("Delete Post", role: .destructive) {
-                showDeleteAlert = true
+                // Option to remove sold/leased status
+                if showSoldOptions && soldStatus != nil {
+                    Button("Remove \(soldStatus?.capitalized ?? "") Status") {
+                        removeSoldStatus()
+                    }
+                }
+
+                // Option to cancel open house
+                if home.openHousePaid == true, let openHouseDate = home.openHouseDate {
+                    let endDate = home.openHouseEndDate ?? openHouseDate.addingTimeInterval(7200)
+                    if endDate > Date() {
+                        Button("Cancel Open House", role: .destructive) {
+                            cancelOpenHouse()
+                        }
+                    }
+                }
+
+                Button("Delete Post", role: .destructive) {
+                    showDeleteAlert = true
+                }
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -810,6 +935,30 @@ struct HomePostView: View {
         } message: {
             Text("Are you sure you want to delete this post? This action cannot be undone.")
         }
+        .overlay(
+            Group {
+                if showOpenHouseSavedMessage {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Image(systemName: "calendar.badge.checkmark")
+                                .foregroundColor(.white)
+                                .font(.system(size: 20))
+                            Text(isOpenHouseSaved ? "Added to Open Houses" : "Removed from Open Houses")
+                                .foregroundColor(.white)
+                                .fontWeight(.semibold)
+                        }
+                        .padding()
+                        .background(Color.green)
+                        .cornerRadius(10)
+                        .shadow(radius: 10)
+                        .padding(.bottom, 50)
+                    }
+                    .transition(.move(edge: .bottom))
+                    .animation(.spring(), value: showOpenHouseSavedMessage)
+                }
+            }
+        )
     }
 
     func checkIfLiked() {
@@ -886,6 +1035,44 @@ struct HomePostView: View {
                         .insert(NewLike(home_id: home.id.uuidString, user_id: userId.uuidString))
                         .execute()
                     print("✅ Liked post successfully")
+
+                    // Create notification for post owner (don't notify yourself)
+                    if home.userId != userId {
+                        struct UsernameResponse: Codable {
+                            let username: String
+                        }
+
+                        let currentUsername = try? await SupabaseManager.shared.client
+                            .from("profiles")
+                            .select("username")
+                            .eq("id", value: userId.uuidString)
+                            .single()
+                            .execute()
+                            .value as UsernameResponse
+
+                        struct NewNotification: Encodable {
+                            let user_id: String
+                            let type: String
+                            let title: String
+                            let message: String
+                            let home_id: String
+                        }
+
+                        let username = currentUsername?.username ?? "Someone"
+                        let notification = NewNotification(
+                            user_id: home.userId.uuidString,
+                            type: "like",
+                            title: "New Like",
+                            message: "\(username) liked your post",
+                            home_id: home.id.uuidString
+                        )
+
+                        try? await SupabaseManager.shared.client
+                            .from("notifications")
+                            .insert(notification)
+                            .execute()
+                        print("✅ Created like notification")
+                    }
                 } else {
                     // Delete like
                     print("💔 Deleting like for home: \(home.id)")
@@ -980,8 +1167,9 @@ struct HomePostView: View {
 
                 print("✅ Post deleted successfully")
 
-                // Post notification to refresh feed
-                NotificationCenter.default.post(name: NSNotification.Name("RefreshFeed"), object: nil)
+                // Post notifications to refresh feed and profile
+                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshFeed"), object: nil)
+                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshProfile"), object: nil)
             } catch {
                 print("❌ Error deleting post: \(error)")
             }
@@ -989,15 +1177,19 @@ struct HomePostView: View {
     }
 
     func markAsSoldOrLeased(status: String) {
+        print("🔧 markAsSoldOrLeased called with status: \(status)")
         Task {
             do {
                 let userId = try await SupabaseManager.shared.client.auth.session.user.id
+                print("🔧 Current user ID: \(userId), Post owner ID: \(home.userId)")
 
                 // Check if user owns this post
                 if home.userId != userId {
                     print("❌ User does not own this post")
                     return
                 }
+
+                print("🔧 User owns post, updating status to: \(status)")
 
                 struct SoldStatusUpdate: Encodable {
                     let sold_status: String
@@ -1009,6 +1201,7 @@ struct HomePostView: View {
                     sold_date: Date()
                 )
 
+                print("🔧 Sending update to Supabase...")
                 try await SupabaseManager.shared.client
                     .from("homes")
                     .update(update)
@@ -1016,13 +1209,16 @@ struct HomePostView: View {
                     .execute()
 
                 // Update local state
-                soldStatus = status
-                soldDate = Date()
+                await MainActor.run {
+                    soldStatus = status
+                    soldDate = Date()
+                    print("✅ Local state updated - soldStatus: \(status)")
+                }
 
                 print("✅ Post marked as \(status)")
 
                 // Post notification to refresh profile
-                NotificationCenter.default.post(name: NSNotification.Name("RefreshProfile"), object: nil)
+                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshProfile"), object: nil)
             } catch {
                 print("❌ Error marking post as \(status): \(error)")
             }
@@ -1063,7 +1259,7 @@ struct HomePostView: View {
                 print("✅ Sold/leased status removed")
 
                 // Post notification to refresh profile
-                NotificationCenter.default.post(name: NSNotification.Name("RefreshProfile"), object: nil)
+                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshProfile"), object: nil)
             } catch {
                 print("❌ Error removing sold status: \(error)")
             }
@@ -1213,6 +1409,198 @@ struct HomePostView: View {
                 print("❌ Error details: \(error.localizedDescription)")
                 // Fallback to original price if community price fails
                 estimatedPrice = NSDecimalNumber(decimal: home.price ?? 0).intValue
+            }
+        }
+    }
+
+    // MARK: - Open House Saved Functions
+
+    func checkIfOpenHouseSaved() {
+        // Only check if this is an open house post
+        guard let openHouseDate = home.openHouseDate, home.openHousePaid == true else {
+            return
+        }
+
+        let endDate = home.openHouseEndDate ?? openHouseDate.addingTimeInterval(7200)
+        guard endDate > Date() else {
+            return
+        }
+
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                struct SavedOpenHouseCheck: Codable {
+                    let id: UUID
+                }
+
+                let response: [SavedOpenHouseCheck] = try await SupabaseManager.shared.client
+                    .from("saved_open_houses")
+                    .select("id")
+                    .eq("home_id", value: home.id.uuidString)
+                    .eq("user_id", value: userId.uuidString)
+                    .execute()
+                    .value
+
+                isOpenHouseSaved = !response.isEmpty
+                print(isOpenHouseSaved ? "📅 Open house is saved" : "ℹ️ Open house is not saved")
+            } catch {
+                print("❌ Error checking saved open house status: \(error)")
+            }
+        }
+    }
+
+    func toggleOpenHouseSaved() {
+        print("📅 Toggle open house saved called - current state: \(isOpenHouseSaved)")
+
+        isOpenHouseSaved.toggle()
+
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                if isOpenHouseSaved {
+                    // Save open house
+                    print("📅 Saving open house for home: \(home.id)")
+                    struct NewSavedOpenHouse: Encodable {
+                        let home_id: String
+                        let user_id: String
+                    }
+
+                    try await SupabaseManager.shared.client
+                        .from("saved_open_houses")
+                        .insert(NewSavedOpenHouse(home_id: home.id.uuidString, user_id: userId.uuidString))
+                        .execute()
+                    print("✅ Open house saved successfully")
+
+                    // Post notification to refresh open house list
+                    Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshOpenHouseList"), object: nil)
+                } else {
+                    // Unsave open house
+                    print("📅 Removing saved open house for home: \(home.id)")
+                    try await SupabaseManager.shared.client
+                        .from("saved_open_houses")
+                        .delete()
+                        .eq("home_id", value: home.id.uuidString)
+                        .eq("user_id", value: userId.uuidString)
+                        .execute()
+                    print("✅ Open house unsaved successfully")
+
+                    // Post notification to refresh open house list
+                    Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshOpenHouseList"), object: nil)
+                }
+
+                // Show success message
+                await MainActor.run {
+                    withAnimation {
+                        showOpenHouseSavedMessage = true
+                    }
+                }
+
+                // Hide message after 2 seconds
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+                await MainActor.run {
+                    withAnimation {
+                        showOpenHouseSavedMessage = false
+                    }
+                }
+            } catch {
+                print("❌ Error toggling saved open house: \(error)")
+                // Revert on error
+                await MainActor.run {
+                    isOpenHouseSaved.toggle()
+                }
+            }
+        }
+    }
+
+    // MARK: - Cancel Open House
+
+    func cancelOpenHouse() {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                // Check if user owns this post
+                if home.userId != userId {
+                    print("❌ User does not own this post")
+                    return
+                }
+
+                print("🚫 Cancelling open house for home: \(home.id)")
+
+                // Get all users who saved this open house
+                struct SavedBy: Codable {
+                    let userId: UUID
+
+                    enum CodingKeys: String, CodingKey {
+                        case userId = "user_id"
+                    }
+                }
+
+                let savedByUsers: [SavedBy] = try await SupabaseManager.shared.client
+                    .from("saved_open_houses")
+                    .select("user_id")
+                    .eq("home_id", value: home.id.uuidString)
+                    .execute()
+                    .value
+
+                print("📢 Notifying \(savedByUsers.count) users who saved this open house")
+
+                // Create notifications for each user who saved it
+                for savedUser in savedByUsers {
+                    struct NewNotification: Encodable {
+                        let user_id: String
+                        let type: String
+                        let title: String
+                        let message: String
+                        let home_id: String
+                    }
+
+                    let address = home.address ?? "a property"
+                    let notification = NewNotification(
+                        user_id: savedUser.userId.uuidString,
+                        type: "open_house_cancelled",
+                        title: "Open House Cancelled",
+                        message: "The open house at \(address) has been cancelled by the owner.",
+                        home_id: home.id.uuidString
+                    )
+
+                    try await SupabaseManager.shared.client
+                        .from("notifications")
+                        .insert(notification)
+                        .execute()
+                }
+
+                // Update the home to remove open house info
+                struct OpenHouseUpdate: Encodable {
+                    let open_house_paid: Bool?
+                    let open_house_date: Date?
+                    let open_house_end_date: Date?
+                    let stripe_payment_id: String?
+                }
+
+                let update = OpenHouseUpdate(
+                    open_house_paid: nil,
+                    open_house_date: nil,
+                    open_house_end_date: nil,
+                    stripe_payment_id: nil
+                )
+
+                try await SupabaseManager.shared.client
+                    .from("homes")
+                    .update(update)
+                    .eq("id", value: home.id.uuidString)
+                    .execute()
+
+                print("✅ Open house cancelled successfully")
+
+                // Post notifications to refresh
+                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshFeed"), object: nil)
+                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshProfile"), object: nil)
+                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshOpenHouseList"), object: nil)
+            } catch {
+                print("❌ Error cancelling open house: \(error)")
             }
         }
     }

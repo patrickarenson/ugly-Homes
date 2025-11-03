@@ -18,6 +18,9 @@ struct AuthView: View {
     @State private var showForgotPassword = false
     @State private var resetEmail = ""
     @State private var showResetSuccess = false
+    @State private var biometricType: BiometricType = .none
+    @State private var hasSavedCredentials = false
+    @State private var showSaveBiometricPrompt = false
 
     var body: some View {
         ZStack {
@@ -36,7 +39,7 @@ struct AuthView: View {
                 Spacer()
 
                 // Logo - Bigger and centered
-                VStack(spacing: 20) {
+                VStack(spacing: 0) {
                     // Housers Logo (transparent background)
                     Image("HousersLogo")
                         .resizable()
@@ -44,10 +47,11 @@ struct AuthView: View {
                         .frame(width: 200, height: 200)
                         .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 8)
 
-                    Text("Discover ugly homes, beautiful deals")
+                    Text("Talk Homes. Discover Deals.")
                         .font(.system(size: 16))
                         .foregroundColor(.white.opacity(0.95))
                         .fontWeight(.medium)
+                        .offset(y: -20)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 40)
@@ -140,6 +144,24 @@ struct AuthView: View {
                     .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
                     .disabled(isLoading)
 
+                    // Biometric login button
+                    if !isSignUp && hasSavedCredentials && biometricType != .none {
+                        Button(action: handleBiometricAuth) {
+                            HStack {
+                                Image(systemName: biometricType.icon)
+                                    .font(.system(size: 20))
+                                Text("Sign in with \(biometricType.name)")
+                                    .font(.system(size: 15, weight: .medium))
+                            }
+                            .foregroundColor(.white.opacity(0.9))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.white.opacity(0.15))
+                            .cornerRadius(12)
+                        }
+                        .disabled(isLoading)
+                    }
+
                     // Forgot password (only show on login)
                     if !isSignUp {
                         Button(action: {
@@ -180,6 +202,20 @@ struct AuthView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text("Check your email for a link to reset your password.")
+        }
+        .alert("Save Login?", isPresented: $showSaveBiometricPrompt) {
+            Button("Yes") {
+                saveBiometricCredentials()
+            }
+            Button("Not Now", role: .cancel) {
+                // Trigger auth state change even if they decline
+                NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
+            }
+        } message: {
+            Text("Would you like to use \(biometricType.name) to sign in next time?")
+        }
+        .onAppear {
+            checkBiometricAvailability()
         }
     }
 
@@ -234,6 +270,18 @@ struct AuthView: View {
                     )
 
                     print("✅ Login successful! User ID: \(response.user.id)")
+
+                    // Prompt to save credentials if biometric is available and not already saved
+                    await MainActor.run {
+                        isLoading = false
+                        if biometricType != .none && !hasSavedCredentials {
+                            showSaveBiometricPrompt = true
+                        } else {
+                            // Only trigger auth state change if not showing biometric prompt
+                            NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
+                        }
+                    }
+                    return // Don't continue to the code below
                 }
 
                 isLoading = false
@@ -245,6 +293,73 @@ struct AuthView: View {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    func checkBiometricAvailability() {
+        biometricType = BiometricAuthManager.shared.biometricType()
+        hasSavedCredentials = BiometricAuthManager.shared.getCredentials() != nil
+        print("🔐 Biometric type: \(biometricType.name), Has credentials: \(hasSavedCredentials)")
+    }
+
+    func handleBiometricAuth() {
+        isLoading = true
+        errorMessage = ""
+
+        Task {
+            do {
+                // Authenticate with biometrics
+                let success = try await BiometricAuthManager.shared.authenticate()
+
+                if success {
+                    // Get stored credentials
+                    guard let credentials = BiometricAuthManager.shared.getCredentials() else {
+                        await MainActor.run {
+                            isLoading = false
+                            errorMessage = "Failed to retrieve credentials"
+                        }
+                        return
+                    }
+
+                    print("🔐 Biometric auth successful, signing in...")
+
+                    // Sign in with stored credentials
+                    let response = try await SupabaseManager.shared.client.auth.signIn(
+                        email: credentials.email,
+                        password: credentials.password
+                    )
+
+                    print("✅ Biometric login successful! User ID: \(response.user.id)")
+
+                    await MainActor.run {
+                        isLoading = false
+                        NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
+                    }
+                } else {
+                    await MainActor.run {
+                        isLoading = false
+                        errorMessage = "Authentication failed"
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    print("❌ Biometric auth error: \(error)")
+                    errorMessage = "Authentication failed. Please use your password."
+                }
+            }
+        }
+    }
+
+    func saveBiometricCredentials() {
+        let success = BiometricAuthManager.shared.saveCredentials(email: email, password: password)
+        if success {
+            print("✅ Credentials saved for biometric auth")
+            hasSavedCredentials = true
+        } else {
+            print("❌ Failed to save credentials")
+        }
+        // Trigger auth state change after user responds to prompt
+        NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
     }
 }
 

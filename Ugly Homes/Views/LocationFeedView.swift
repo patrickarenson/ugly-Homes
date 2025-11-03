@@ -18,7 +18,9 @@ struct LocationFeedView: View {
     @State private var searchText = ""
     @State private var showMapView = false
     @State private var selectedHome: Home?
+    @State private var showOpenHouseList = false
     @StateObject private var locationManager = LocationManager()
+    @State private var savedOpenHouseIds: Set<UUID> = []
 
     let usStates = ["All", "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
                     "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA",
@@ -51,11 +53,56 @@ struct LocationFeedView: View {
         }
     }
 
+    // All saved upcoming open houses (not expired yet)
+    var upcomingOpenHouses: [Home] {
+        let now = Date()
+
+        let filtered = allHomes.filter { home in
+            guard home.openHousePaid == true,
+                  let startDate = home.openHouseDate,
+                  savedOpenHouseIds.contains(home.id) else {
+                return false
+            }
+
+            let endDate = home.openHouseEndDate ?? startDate.addingTimeInterval(7200)
+            // Only show if the open house hasn't ended yet
+            return endDate >= now
+        }
+        .sorted { home1, home2 in
+            (home1.openHouseDate ?? Date()) < (home2.openHouseDate ?? Date())
+        }
+
+        return filtered
+    }
+
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
                 // Search bar
                 HStack(spacing: 12) {
+                    // Open House List button (left side)
+                    Button(action: {
+                        showOpenHouseList = true
+                    }) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "signpost.right.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.green)
+
+                            // Badge showing count of upcoming open houses
+                            if upcomingOpenHouses.count > 0 {
+                                Text("\(upcomingOpenHouses.count)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 2)
+                                    .background(Color.red)
+                                    .clipShape(Circle())
+                                    .offset(x: 8, y: -8)
+                            }
+                        }
+                    }
+
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
@@ -164,14 +211,53 @@ struct LocationFeedView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showOpenHouseList) {
+                NavigationView {
+                    OpenHouseListView(
+                        homes: upcomingOpenHouses,
+                        userLocation: locationManager.location,
+                        onSelectHome: { home in
+                            showOpenHouseList = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                selectedHome = home
+                            }
+                        },
+                        onDeleteHome: { home in
+                            deleteSavedOpenHouse(home)
+                        }
+                    )
+                    .navigationTitle("Nearby Open Houses")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Done") {
+                                showOpenHouseList = false
+                            }
+                        }
+                    }
+                }
+            }
             .onChange(of: showCreatePost) { oldValue, newValue in
                 if !newValue {
                     loadHomes()
                 }
             }
             .onAppear {
+                print("🗺️ LocationFeedView appeared")
                 loadHomes()
+                loadSavedOpenHouses()
                 locationManager.requestLocation()
+            }
+            .onChange(of: showOpenHouseList) { oldValue, newValue in
+                // Reload saved open houses when opening the list to get latest
+                if newValue {
+                    print("🏠 Opening open house list, refreshing saved items")
+                    loadSavedOpenHouses()
+                }
+            }
+            .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("RefreshOpenHouseList"))) { _ in
+                print("🔔 Received RefreshOpenHouseList notification")
+                loadSavedOpenHouses()
             }
         }
     }
@@ -212,6 +298,64 @@ struct LocationFeedView: View {
 
     func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+
+    func loadSavedOpenHouses() {
+        Task {
+            do {
+                print("📅 Loading saved open houses...")
+
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                struct SavedOpenHouse: Codable {
+                    let homeId: UUID
+
+                    enum CodingKeys: String, CodingKey {
+                        case homeId = "home_id"
+                    }
+                }
+
+                let response: [SavedOpenHouse] = try await SupabaseManager.shared.client
+                    .from("saved_open_houses")
+                    .select("home_id")
+                    .eq("user_id", value: userId.uuidString)
+                    .execute()
+                    .value
+
+                await MainActor.run {
+                    savedOpenHouseIds = Set(response.map { $0.homeId })
+                    print("✅ Loaded \(savedOpenHouseIds.count) saved open houses")
+                    print("   Saved IDs: \(savedOpenHouseIds.map { $0.uuidString })")
+                    print("   Upcoming open houses count: \(upcomingOpenHouses.count)")
+                }
+            } catch {
+                print("❌ Error loading saved open houses: \(error)")
+            }
+        }
+    }
+
+    func deleteSavedOpenHouse(_ home: Home) {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                print("🗑️ Deleting saved open house: \(home.id)")
+
+                try await SupabaseManager.shared.client
+                    .from("saved_open_houses")
+                    .delete()
+                    .eq("home_id", value: home.id.uuidString)
+                    .eq("user_id", value: userId.uuidString)
+                    .execute()
+
+                print("✅ Deleted saved open house")
+
+                // Reload the saved open houses list
+                loadSavedOpenHouses()
+            } catch {
+                print("❌ Error deleting saved open house: \(error)")
+            }
+        }
     }
 }
 
@@ -296,7 +440,7 @@ struct PropertyMapView: View {
                 )
                 .shadow(radius: 3)
         } else {
-            // Property pin - orange
+            // Property pin - green for Open House, orange for regular
             Button(action: {
                 if let home = annotation.home {
                     selectedHome = home
@@ -639,6 +783,214 @@ struct USStateCoordinates {
         "WI": CLLocationCoordinate2D(latitude: 44.268543, longitude: -89.616508),
         "WY": CLLocationCoordinate2D(latitude: 42.755966, longitude: -107.302490),
     ]
+}
+
+// MARK: - Open House List View
+struct OpenHouseListView: View {
+    let homes: [Home]
+    let userLocation: CLLocationCoordinate2D?
+    let onSelectHome: (Home) -> Void
+    let onDeleteHome: (Home) -> Void
+
+    var body: some View {
+        Group {
+            if homes.isEmpty {
+                // Empty state
+                VStack(spacing: 20) {
+                    Image(systemName: "calendar.badge.plus")
+                        .font(.system(size: 60))
+                        .foregroundColor(.green)
+                    Text("No Saved Open Houses")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Text("Tap the green calendar button on Open House posts to save them here")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // List of open houses
+                List {
+                    ForEach(homes) { home in
+                        Button(action: {
+                            onSelectHome(home)
+                        }) {
+                            OpenHouseRowView(home: home, userLocation: userLocation)
+                        }
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    }
+                    .onDelete { indexSet in
+                        for index in indexSet {
+                            onDeleteHome(homes[index])
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+    }
+}
+
+// MARK: - Open House Row View
+struct OpenHouseRowView: View {
+    let home: Home
+    let userLocation: CLLocationCoordinate2D?
+    @State private var geocodedDistance: Double?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Address
+            Text(home.address ?? "Address Not Available")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.primary)
+
+            // City, State
+            if let city = home.city, let state = home.state {
+                Text("\(city), \(state)")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
+            }
+
+            // Date and Time
+            if let startDate = home.openHouseDate {
+                HStack(spacing: 4) {
+                    Image(systemName: "calendar")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                    Text(formatOpenHouseDateTime(start: startDate, end: home.openHouseEndDate))
+                        .font(.system(size: 13))
+                        .foregroundColor(.primary)
+                }
+            }
+
+            HStack(spacing: 16) {
+                // Distance
+                if let userLoc = userLocation {
+                    HStack(spacing: 4) {
+                        Image(systemName: "location.fill")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        if let distance = geocodedDistance {
+                            Text(formatDistance(distance))
+                                .font(.system(size: 13))
+                                .foregroundColor(.primary)
+                        } else {
+                            Text("Calculating...")
+                                .font(.system(size: 13))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .onAppear {
+            if let userLoc = userLocation {
+                geocodeAddress(userLocation: userLoc)
+            }
+        }
+    }
+
+    func formatOpenHouseDateTime(start: Date, end: Date?) -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "EEE, MMM d" // "Mon, Nov 4"
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeStyle = .short
+
+        let dateString = dateFormatter.string(from: start)
+        let startTime = timeFormatter.string(from: start)
+
+        if let end = end {
+            let endTime = timeFormatter.string(from: end)
+            return "\(dateString) at \(startTime) - \(endTime)"
+        } else {
+            let defaultEnd = start.addingTimeInterval(7200)
+            let endTime = timeFormatter.string(from: defaultEnd)
+            return "\(dateString) at \(startTime) - \(endTime)"
+        }
+    }
+
+    func formatDistance(_ distance: Double) -> String {
+        if distance < 1000 {
+            return "\(Int(distance)) meters"
+        } else {
+            let miles = distance / 1609.34 // Convert meters to miles
+            return String(format: "%.1f miles", miles)
+        }
+    }
+
+    func geocodeAddress(userLocation: CLLocationCoordinate2D) {
+        guard let address = home.address,
+              let city = home.city,
+              let state = home.state else {
+            print("⚠️ Missing address components for geocoding")
+            return
+        }
+
+        let fullAddress = "\(address), \(city), \(state)"
+        print("📍 Geocoding address: \(fullAddress)")
+
+        let geocoder = CLGeocoder()
+        geocoder.geocodeAddressString(fullAddress) { placemarks, error in
+            if let error = error {
+                print("❌ Geocoding error: \(error.localizedDescription)")
+                // Fallback to city center if geocoding fails
+                self.fallbackToCityDistance(userLocation: userLocation)
+                return
+            }
+
+            if let placemark = placemarks?.first,
+               let location = placemark.location {
+                let homeLocation = location.coordinate
+                let userLoc = CLLocation(latitude: userLocation.latitude, longitude: userLocation.longitude)
+                let propLoc = CLLocation(latitude: homeLocation.latitude, longitude: homeLocation.longitude)
+                let distance = userLoc.distance(from: propLoc)
+
+                DispatchQueue.main.async {
+                    self.geocodedDistance = distance
+                    print("✅ Geocoded distance: \(String(format: "%.1f", distance / 1609.34)) miles")
+                }
+            } else {
+                print("⚠️ No placemark found, using fallback")
+                self.fallbackToCityDistance(userLocation: userLocation)
+            }
+        }
+    }
+
+    func fallbackToCityDistance(userLocation: CLLocationCoordinate2D) {
+        guard let city = home.city, let state = home.state else {
+            return
+        }
+
+        let cleanCity = city.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanState = state.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+
+        // Try city coordinates first
+        let cityKey = "\(cleanCity),\(cleanState)"
+        if let coordinate = USCityCoordinates.coordinates[cityKey] {
+            let homeLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            let userLoc = CLLocation(latitude: userLocation.latitude, longitude: userLocation.longitude)
+            let distance = userLoc.distance(from: homeLocation)
+            DispatchQueue.main.async {
+                self.geocodedDistance = distance
+            }
+            return
+        }
+
+        // Fallback to state center
+        if let stateCoord = USStateCoordinates.coordinates[cleanState] {
+            let homeLocation = CLLocation(latitude: stateCoord.latitude, longitude: stateCoord.longitude)
+            let userLoc = CLLocation(latitude: userLocation.latitude, longitude: userLocation.longitude)
+            let distance = userLoc.distance(from: homeLocation)
+            DispatchQueue.main.async {
+                self.geocodedDistance = distance
+            }
+        }
+    }
 }
 
 #Preview {

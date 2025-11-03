@@ -33,32 +33,20 @@ struct ProfileView: View {
 
     var body: some View {
         ScrollView {
-                VStack(spacing: 20) {
-                    if let profile = profile {
-                        // Profile header
-                        VStack(spacing: 12) {
-                            // Profile photo
-                            if let avatarUrl = profile.avatarUrl, !avatarUrl.isEmpty, let baseUrl = URL(string: avatarUrl) {
-                                // Add timestamp to force image reload
-                                let urlWithTimestamp = URL(string: "\(avatarUrl)?t=\(Date().timeIntervalSince1970)")
-                                AsyncImage(url: urlWithTimestamp ?? baseUrl) { image in
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(width: 80, height: 80)
-                                        .clipShape(Circle())
-                                } placeholder: {
-                                    Circle()
-                                        .fill(Color.gray.opacity(0.3))
-                                        .frame(width: 80, height: 80)
-                                        .overlay(
-                                            Image(systemName: "person.fill")
-                                                .font(.largeTitle)
-                                                .foregroundColor(.white)
-                                        )
-                                }
-                                .id(avatarUrl) // Force SwiftUI to recreate the view when URL changes
-                            } else {
+            VStack(spacing: 20) {
+                if let profile = profile {
+                    // Profile header
+                    VStack(spacing: 12) {
+                        // Profile photo
+                        if let avatarUrl = profile.avatarUrl, !avatarUrl.isEmpty, let baseUrl = URL(string: avatarUrl) {
+                            // Add timestamp to force image reload
+                            AsyncImage(url: URL(string: "\(avatarUrl)?t=\(Date().timeIntervalSince1970)") ?? baseUrl) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 80, height: 80)
+                                    .clipShape(Circle())
+                            } placeholder: {
                                 Circle()
                                     .fill(Color.gray.opacity(0.3))
                                     .frame(width: 80, height: 80)
@@ -68,164 +56,198 @@ struct ProfileView: View {
                                             .foregroundColor(.white)
                                     )
                             }
-
-                            Text("@\(profile.username)")
-                                .font(.system(size: 18))
-                                .fontWeight(.semibold)
-
-                            if let market = profile.market, !market.isEmpty {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "mappin.circle.fill")
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
-                                    Text(market)
-                                        .font(.subheadline)
-                                        .foregroundColor(.gray)
-                                }
-                            }
-
-                            if let bio = profile.bio {
-                                Text(bio)
-                                    .font(.subheadline)
-                                    .foregroundColor(.primary.opacity(0.8))
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal)
-                            }
-
-                            // Message button (only show when viewing another user's profile)
-                            if isViewingOtherProfile {
-                                Button(action: {
-                                    showChat = true
-                                }) {
-                                    HStack {
-                                        Image(systemName: "message.fill")
-                                        Text("Message")
-                                            .fontWeight(.semibold)
-                                    }
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 10)
-                                    .background(Color.blue)
-                                    .cornerRadius(8)
-                                }
-                                .padding(.horizontal, 40)
-                                .padding(.top, 8)
-                            }
-                        }
-                        .padding(.top, 20)
-
-                        // Stats - Modern, compact single row
-                        HStack(spacing: 0) {
-                            VStack(spacing: 3) {
-                                Text("\(userHomes.count)")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                Text("Posts")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-
-                            VStack(spacing: 3) {
-                                Text("\(userHomes.filter { $0.soldStatus == "sold" }.count)")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                Text("Sold")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-
-                            VStack(spacing: 3) {
-                                Text("\(userHomes.filter { $0.soldStatus == "leased" }.count)")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                Text("Leased")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-
-                            VStack(spacing: 3) {
-                                let ranking = calculateRanking(homes: userHomes)
-                                Text(ranking.text)
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(ranking.color)
-                                Text("Rank")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
-
-                        Divider()
-
-                        // User's posts grid
-                        if userHomes.isEmpty {
-                            VStack(spacing: 20) {
-                                Image(systemName: "house")
-                                    .font(.system(size: 60))
-                                    .foregroundColor(.gray)
-                                Text("No posts yet")
-                                    .font(.title3)
-                                    .foregroundColor(.gray)
-                            }
-                            .padding(.top, 60)
+                            .id(avatarUrl) // Force SwiftUI to recreate the view when URL changes
                         } else {
-                            LazyVGrid(columns: [
-                                GridItem(.flexible()),
-                                GridItem(.flexible()),
-                                GridItem(.flexible())
-                            ], spacing: 2) {
-                                ForEach(userHomes) { home in
-                                    if let imageUrl = home.imageUrls.first {
-                                        ZStack(alignment: .topTrailing) {
-                                            AsyncImage(url: URL(string: imageUrl)) { image in
-                                                image
-                                                    .resizable()
-                                                    .aspectRatio(1, contentMode: .fill)
-                                            } placeholder: {
-                                                Rectangle()
-                                                    .fill(Color.gray.opacity(0.2))
-                                                    .aspectRatio(1, contentMode: .fill)
-                                            }
-                                            .clipped()
+                            Circle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(width: 80, height: 80)
+                                .overlay(
+                                    Image(systemName: "person.fill")
+                                        .font(.largeTitle)
+                                        .foregroundColor(.white)
+                                )
+                        }
 
-                                            // Sold/Leased badge overlay
+                        Text("@\(profile.username)")
+                            .font(.system(size: 18))
+                            .fontWeight(.semibold)
+
+                        if let market = profile.market, !market.isEmpty {
+                            HStack(spacing: 4) {
+                                Image(systemName: "mappin.circle.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                Text(market)
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                            }
+                        }
+
+                        if let bio = profile.bio {
+                            Text(bio)
+                                .font(.subheadline)
+                                .foregroundColor(.primary.opacity(0.8))
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                        }
+
+                        // Message button (only show when viewing another user's profile)
+                        if isViewingOtherProfile {
+                            Button(action: {
+                                print("🔵 Message button tapped for: \(profile.username)")
+                                showChat = true
+                                print("🔵 showChat = \(showChat)")
+                            }) {
+                                HStack {
+                                    Image(systemName: "message.fill")
+                                    Text("Message")
+                                        .fontWeight(.semibold)
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Color.blue)
+                                .cornerRadius(8)
+                            }
+                            .padding(.horizontal, 40)
+                            .padding(.top, 8)
+                        }
+                    }
+                    .padding(.top, 20)
+
+                    // Stats - Modern, compact single row
+                    HStack(spacing: 0) {
+                        VStack(spacing: 3) {
+                            Text("\(userHomes.count)")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.primary)
+                            Text("Posts")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+
+                        VStack(spacing: 3) {
+                            Text("\(userHomes.filter { $0.soldStatus == "sold" }.count)")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.primary)
+                            Text("Sold")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+
+                        VStack(spacing: 3) {
+                            Text("\(userHomes.filter { $0.soldStatus == "leased" }.count)")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.primary)
+                            Text("Leased")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+
+                        VStack(spacing: 3) {
+                            Text(calculateRanking(homes: userHomes).text)
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(calculateRanking(homes: userHomes).color)
+                            Text("Rank")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+
+                    Divider()
+
+                    // User's posts grid
+                    if userHomes.isEmpty {
+                        VStack(spacing: 20) {
+                            Image(systemName: "house")
+                                .font(.system(size: 60))
+                                .foregroundColor(.gray)
+                            Text("No posts yet")
+                                .font(.title3)
+                                .foregroundColor(.gray)
+                        }
+                        .padding(.top, 60)
+                    } else {
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 2) {
+                            ForEach(userHomes) { home in
+                                if let imageUrl = home.imageUrls.first {
+                                    ZStack(alignment: .topTrailing) {
+                                        AsyncImage(url: URL(string: imageUrl)) { image in
+                                            image
+                                                .resizable()
+                                                .aspectRatio(1, contentMode: .fill)
+                                        } placeholder: {
+                                            Rectangle()
+                                                .fill(Color.gray.opacity(0.2))
+                                                .aspectRatio(1, contentMode: .fill)
+                                        }
+                                        .clipped()
+
+                                        VStack(alignment: .trailing, spacing: 4) {
+                                            // Sold/Leased/Pending badge overlay
                                             if let soldStatus = home.soldStatus {
                                                 Text(soldStatus.uppercased())
                                                     .font(.system(size: 9, weight: .bold))
                                                     .foregroundColor(.white)
                                                     .padding(.horizontal, 6)
                                                     .padding(.vertical, 3)
-                                                    .background(soldStatus == "sold" ? Color.red : Color.blue)
+                                                    .background(
+                                                        soldStatus == "sold" ? Color.red :
+                                                        soldStatus == "leased" ? Color.blue :
+                                                        soldStatus == "pending" ? Color.yellow : Color.gray
+                                                    )
                                                     .cornerRadius(4)
-                                                    .padding(4)
+                                            }
+
+                                            // Open House badge
+                                            if home.openHousePaid == true, let openHouseDate = home.openHouseDate {
+                                                // Only show if open house is in the future or within the last 24 hours
+                                                let isUpcoming = openHouseDate > Date().addingTimeInterval(-86400)
+                                                if isUpcoming {
+                                                    Text("OPEN HOUSE")
+                                                        .font(.system(size: 8, weight: .bold))
+                                                        .foregroundColor(.white)
+                                                        .padding(.horizontal, 5)
+                                                        .padding(.vertical, 2)
+                                                        .background(Color.green)
+                                                        .cornerRadius(4)
+                                                }
                                             }
                                         }
-                                        .onTapGesture {
-                                            selectedHome = home
-                                            showPostDetail = true
-                                        }
+                                        .padding(4)
+                                    }
+                                    .onTapGesture {
+                                        selectedHome = home
+                                        showPostDetail = true
                                     }
                                 }
                             }
                         }
-                    } else {
-                        VStack(spacing: 20) {
-                            Image(systemName: "person.crop.circle")
-                                .font(.system(size: 60))
-                                .foregroundColor(.gray)
-                            Text("Loading profile...")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                        }
-                        .padding(.top, 100)
+                    }
+                } else {
+                    VStack(spacing: 20) {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 60))
+                            .foregroundColor(.gray)
+                        Text("Loading profile...")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                    .padding(.top, 100)
                 }
             }
-            .navigationTitle(isViewingOtherProfile ? (profile?.username ?? "Profile") : "Profile")
+        }
+        .navigationTitle(isViewingOtherProfile ? (profile?.username ?? "Profile") : "Profile")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             // Only show menu when viewing own profile
@@ -256,52 +278,58 @@ struct ProfileView: View {
                 }
             }
         }
-            .sheet(isPresented: $showEditProfile) {
-                if let profile = profile {
-                    EditProfileView(profile: profile)
-                }
+        .sheet(isPresented: $showEditProfile) {
+            if let profile = profile {
+                EditProfileView(profile: profile)
             }
-            .sheet(isPresented: $showAccountSettings) {
-                AccountSettingsView()
-            }
-            .sheet(isPresented: $showPostDetail) {
-                if let home = selectedHome {
-                    NavigationView {
-                        ScrollView {
-                            HomePostView(home: home, showSoldOptions: !isViewingOtherProfile, preloadedUserId: currentUserId)
-                        }
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .navigationBarLeading) {
-                                Button("Close") {
-                                    showPostDetail = false
-                                }
+        }
+        .sheet(isPresented: $showAccountSettings) {
+            AccountSettingsView()
+        }
+        .sheet(isPresented: $showPostDetail) {
+            if let home = selectedHome {
+                NavigationView {
+                    ScrollView {
+                        HomePostView(home: home, showSoldOptions: !isViewingOtherProfile, preloadedUserId: currentUserId)
+                    }
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button("Close") {
+                                showPostDetail = false
                             }
                         }
                     }
                 }
             }
-            .sheet(isPresented: $showChat) {
-                if let profile = profile {
+        }
+        .sheet(isPresented: $showChat) {
+            if let profile = profile {
+                let _ = print("🟢 Sheet presenting in ProfileView for: \(profile.username)")
+                NavigationView {
                     ChatView(
                         otherUserId: profile.id,
                         otherUsername: profile.username,
                         otherAvatarUrl: profile.avatarUrl
                     )
                 }
+            } else {
+                let _ = print("🔴 profile is nil in sheet!")
+                Text("Error loading profile")
             }
-            .onAppear {
-                loadProfile()
+        }
+        .onAppear {
+            loadProfile()
 
-                // Listen for profile refresh notifications
-                NotificationCenter.default.addObserver(
-                    forName: NSNotification.Name("RefreshProfile"),
-                    object: nil,
-                    queue: .main
-                ) { _ in
-                    loadProfile()
-                }
+            // Listen for profile refresh notifications
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("RefreshProfile"),
+                object: nil,
+                queue: .main
+            ) { _ in
+                loadProfile()
             }
+        }
     }
 
     func loadProfile() {
@@ -362,10 +390,11 @@ struct ProfileView: View {
         let currentYear = calendar.component(.year, from: Date())
 
         // Count only deals closed THIS YEAR (keeps competition fresh annually)
+        // Exclude "pending" status - only count "sold" and "leased"
         let dealsThisYear = homes.filter { home in
             guard let soldDate = home.soldDate else { return false }
             let dealYear = calendar.component(.year, from: soldDate)
-            return dealYear == currentYear && home.soldStatus != nil
+            return dealYear == currentYear && (home.soldStatus == "sold" || home.soldStatus == "leased")
         }.count
 
         // Competitive ranking algorithm with color coding

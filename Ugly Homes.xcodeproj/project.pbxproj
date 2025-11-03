@@ -447,8 +447,10 @@
 				DEVELOPMENT_TEAM = 526B6ZA2G2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Ugly-Homes-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Housers;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "We use Face ID to securely sign you in to your \n  account";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We need your location to show nearby properties on the map and help you find homes in your area.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -483,8 +485,10 @@
 				DEVELOPMENT_TEAM = 526B6ZA2G2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Ugly-Homes-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Housers;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "We use Face ID to securely sign you in to your \n  account";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We need your location to show nearby properties on the map and help you find homes in your area.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

@@ -176,6 +176,44 @@ struct CommentsView: View {
                     .insert(newCommentData)
                     .execute()
 
+                // Create notification for post owner (don't notify yourself)
+                if home.userId != userId {
+                    struct UsernameResponse: Codable {
+                        let username: String
+                    }
+
+                    let currentUsername = try? await SupabaseManager.shared.client
+                        .from("profiles")
+                        .select("username")
+                        .eq("id", value: userId.uuidString)
+                        .single()
+                        .execute()
+                        .value as UsernameResponse
+
+                    struct NewNotification: Encodable {
+                        let user_id: String
+                        let type: String
+                        let title: String
+                        let message: String
+                        let home_id: String
+                    }
+
+                    let username = currentUsername?.username ?? "Someone"
+                    let notification = NewNotification(
+                        user_id: home.userId.uuidString,
+                        type: "comment",
+                        title: "New Comment",
+                        message: "\(username) commented on your post",
+                        home_id: home.id.uuidString
+                    )
+
+                    try? await SupabaseManager.shared.client
+                        .from("notifications")
+                        .insert(notification)
+                        .execute()
+                    print("✅ Created comment notification")
+                }
+
                 newComment = ""
                 isSending = false
                 loadComments()
@@ -235,7 +273,7 @@ struct CommentRow: View {
                             ProfileView(viewingUserId: profile.id)
                         }
                     }) {
-                        Text("@\(comment.profile?.username ?? "user")")
+                        Text("\(comment.profile?.username ?? "user")")
                             .fontWeight(.semibold)
                             .font(.subheadline)
                             .foregroundColor(.primary)

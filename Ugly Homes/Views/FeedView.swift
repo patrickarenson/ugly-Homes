@@ -367,6 +367,7 @@ struct HomePostView: View {
     @State private var soldStatus: String?
     @State private var soldDate: Date?
     @State private var hasCheckedLike = false
+    @State private var showShareSheet = false
 
     // User-generated pricing feature
     @State private var upVoted = false
@@ -617,7 +618,7 @@ struct HomePostView: View {
 
                 // Share button
                 Button(action: {
-                    shareHome()
+                    showShareSheet = true
                 }) {
                     Image(systemName: "paperplane")
                         .font(.title3)
@@ -747,6 +748,9 @@ struct HomePostView: View {
                     otherAvatarUrl: profile.avatarUrl
                 )
             }
+        }
+        .sheet(isPresented: $showShareSheet) {
+            ShareSheet(home: home)
         }
         .onAppear {
             // Only load user ID if not preloaded

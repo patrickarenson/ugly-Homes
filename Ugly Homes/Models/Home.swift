@@ -15,6 +15,7 @@ struct Home: Codable, Identifiable {
     var description: String?
     var price: Decimal?
     var address: String?
+    var unit: String?
     var city: String?
     var state: String?
     var zipCode: String?
@@ -51,6 +52,7 @@ struct Home: Codable, Identifiable {
         case description
         case price
         case address
+        case unit
         case city
         case state
         case zipCode = "zip_code"

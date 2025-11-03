@@ -10,7 +10,7 @@ import SwiftUI
 struct FeedView: View {
     @State private var homes: [Home] = []
     @State private var allHomes: [Home] = []
-    @State private var isLoading = false
+    @State private var isLoading = true
     @State private var showCreatePost = false
     @State private var searchText = ""
 
@@ -89,7 +89,17 @@ struct FeedView: View {
 
                 // Content
                 ZStack {
-                    if filteredHomes.isEmpty {
+                    if isLoading {
+                        // Loading skeleton (Instagram-style)
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                ForEach(0..<3, id: \.self) { _ in
+                                    LoadingSkeletonView()
+                                        .padding(.bottom, 16)
+                                }
+                            }
+                        }
+                    } else if filteredHomes.isEmpty {
                         VStack(spacing: 20) {
                             Image(systemName: searchText.isEmpty ? "house.slash" : "magnifyingglass")
                                 .font(.system(size: 60))
@@ -1175,6 +1185,158 @@ struct HomePostView: View {
                 estimatedPrice = NSDecimalNumber(decimal: home.price ?? 0).intValue
             }
         }
+    }
+}
+
+// MARK: - Loading Skeleton View
+struct LoadingSkeletonView: View {
+    @State private var isAnimating = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header (profile pic + username + location)
+            HStack {
+                Circle()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 32, height: 32)
+                    .shimmer(isAnimating: isAnimating)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 100, height: 12)
+                        .shimmer(isAnimating: isAnimating)
+
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 140, height: 10)
+                        .shimmer(isAnimating: isAnimating)
+                }
+
+                Spacer()
+
+                Circle()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 20, height: 20)
+                    .shimmer(isAnimating: isAnimating)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+
+            // Image placeholder
+            Rectangle()
+                .fill(Color.gray.opacity(0.2))
+                .frame(height: 400)
+                .shimmer(isAnimating: isAnimating)
+
+            // Action buttons
+            HStack(spacing: 16) {
+                // Heart
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 30, height: 24)
+                    .shimmer(isAnimating: isAnimating)
+
+                // Comment
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 30, height: 24)
+                    .shimmer(isAnimating: isAnimating)
+
+                // Share
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 30, height: 24)
+                    .shimmer(isAnimating: isAnimating)
+
+                // Message
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 30, height: 24)
+                    .shimmer(isAnimating: isAnimating)
+
+                Spacer()
+
+                // Price voting
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 90, height: 24)
+                    .shimmer(isAnimating: isAnimating)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 20)
+            .padding(.bottom, 8)
+
+            // Caption
+            VStack(alignment: .leading, spacing: 4) {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 250, height: 12)
+                    .shimmer(isAnimating: isAnimating)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 2)
+
+            // Bedrooms/Bathrooms info
+            HStack(spacing: 16) {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 60, height: 12)
+                    .shimmer(isAnimating: isAnimating)
+
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 60, height: 12)
+                    .shimmer(isAnimating: isAnimating)
+
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 80, height: 12)
+                    .shimmer(isAnimating: isAnimating)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 16)
+        }
+        .onAppear {
+            isAnimating = true
+        }
+    }
+}
+
+// MARK: - Shimmer Effect Modifier
+struct ShimmerModifier: ViewModifier {
+    let isAnimating: Bool
+    @State private var phase: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color.clear,
+                        Color.white.opacity(0.3),
+                        Color.clear
+                    ]),
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .offset(x: phase)
+                .mask(content)
+            )
+            .onAppear {
+                if isAnimating {
+                    withAnimation(Animation.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+                        phase = 400
+                    }
+                }
+            }
+    }
+}
+
+extension View {
+    func shimmer(isAnimating: Bool) -> some View {
+        modifier(ShimmerModifier(isAnimating: isAnimating))
     }
 }
 

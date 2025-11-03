@@ -20,6 +20,7 @@ struct CreatePostView: View {
     @State private var bedrooms = ""
     @State private var bathrooms = ""
     @State private var address = ""
+    @State private var unit = ""
     @State private var city = ""
     @State private var state = ""
     @State private var zipCode = ""
@@ -34,7 +35,7 @@ struct CreatePostView: View {
     // Open House feature
     @State private var enableOpenHouse = false
     @State private var openHouseDate = Date().addingTimeInterval(86400) // Default tomorrow
-    @State private var openHouseEndDate = Date().addingTimeInterval(86400 + 7200) // Default +2 hours
+    @State private var openHouseEndDate = Date().addingTimeInterval(86400 + 21600) // Default +6 hours
     @State private var hasOpenHousePaid = false
     @State private var stripePaymentId: String?
     @State private var showPaymentSheet = false
@@ -56,6 +57,7 @@ struct CreatePostView: View {
             _bedrooms = State(initialValue: home.bedrooms != nil ? String(home.bedrooms!) : "")
             _bathrooms = State(initialValue: home.bathrooms != nil ? String(NSDecimalNumber(decimal: home.bathrooms!).doubleValue) : "")
             _address = State(initialValue: home.address ?? "")
+            _unit = State(initialValue: home.unit ?? "")
             _city = State(initialValue: home.city ?? "")
             _state = State(initialValue: home.state ?? "")
             _zipCode = State(initialValue: home.zipCode ?? "")
@@ -90,51 +92,54 @@ struct CreatePostView: View {
                                 .font(.caption)
                                 .foregroundColor(.gray)
 
-                        HStack {
-                            TextField("Paste listing URL here", text: $listingURL)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
-                                .autocapitalization(.none)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
+                            HStack {
+                                TextField("Paste listing URL here", text: $listingURL)
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(8)
+                                    .autocapitalization(.none)
+                                    .autocorrectionDisabled()
+                                    .textInputAutocapitalization(.never)
 
-                            Button(action: importFromURL) {
-                                if isImporting {
+                                Button(action: importFromURL) {
+                                    if isImporting {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle())
+                                    } else {
+                                        Image(systemName: "arrow.right.circle.fill")
+                                            .font(.title2)
+                                            .foregroundColor(.orange)
+                                    }
+                                }
+                                .disabled(listingURL.isEmpty || isImporting)
+                            }
+
+                            // Import status/error message
+                            if !errorMessage.isEmpty && errorMessage.contains("Cannot connect") {
+                                Text(errorMessage)
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                                    .padding(.top, 4)
+                            } else if !errorMessage.isEmpty {
+                                Text(errorMessage)
+                                    .foregroundColor(errorMessage.contains("✅") ? .green : .red)
+                                    .font(.caption)
+                                    .padding(.top, 4)
+                            }
+
+                            if isImporting {
+                                HStack(spacing: 8) {
                                     ProgressView()
                                         .progressViewStyle(CircularProgressViewStyle())
-                                } else {
-                                    Image(systemName: "arrow.right.circle.fill")
-                                        .font(.title2)
+                                        .scaleEffect(0.8)
+                                    Text("Importing listing data...")
+                                        .font(.caption)
                                         .foregroundColor(.orange)
                                 }
-                            }
-                            .disabled(listingURL.isEmpty || isImporting)
-                        }
-
-                        // Import status/error message
-                        if !errorMessage.isEmpty {
-                            Text(errorMessage)
-                                .foregroundColor(errorMessage.contains("✅") ? .green : .red)
-                                .font(.caption)
                                 .padding(.top, 4)
-                        }
-
-                        if isImporting {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle())
-                                    .scaleEffect(0.8)
-                                Text("Importing listing data...")
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
                             }
-                            .padding(.top, 4)
                         }
-                    }
-                    }
 
-                    if editingHome == nil {
                         Divider()
                     }
 
@@ -449,6 +454,11 @@ struct CreatePostView: View {
                                 .background(Color(.systemGray6))
                                 .cornerRadius(8)
 
+                            TextField("Unit / Apt # (optional)", text: $unit)
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
+
                             HStack {
                                 TextField("City", text: $city)
                                     .padding()
@@ -497,10 +507,12 @@ struct CreatePostView: View {
                             if enableOpenHouse {
                                 VStack(alignment: .leading, spacing: 12) {
                                     DatePicker("Start Date & Time", selection: $openHouseDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
-                                        .datePickerStyle(.compact)
+                                        .onChange(of: openHouseDate) { oldValue, newValue in
+                                            // Auto-adjust end date to be 6 hours later
+                                            openHouseEndDate = newValue.addingTimeInterval(21600) // 6 hours
+                                        }
 
-                                    DatePicker("End Date & Time", selection: $openHouseEndDate, in: openHouseDate..., displayedComponents: [.date, .hourAndMinute])
-                                        .datePickerStyle(.compact)
+                                    DatePicker("End Date & Time", selection: $openHouseEndDate, in: openHouseDate...openHouseDate.addingTimeInterval(21600), displayedComponents: [.date, .hourAndMinute])
 
                                     if !hasOpenHousePaid {
                                         Button(action: processOpenHousePayment) {
@@ -601,7 +613,7 @@ struct CreatePostView: View {
                 var request = URLRequest(url: apiURL)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.timeoutInterval = 30 // 30 second timeout
+                request.timeoutInterval = 60 // 60 second timeout for API calls
 
                 let body = ["url": listingURL]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -628,6 +640,7 @@ struct CreatePostView: View {
                 struct ScrapedListing: Codable {
                     let price: String?
                     let address: String?
+                    let unit: String?
                     let city: String?
                     let state: String?
                     let zipCode: String?
@@ -653,6 +666,11 @@ struct CreatePostView: View {
                     self.address = address
                     fieldsPopulated += 1
                     print("📍 Address: \(address)")
+                }
+                if let unit = scraped.unit, !unit.isEmpty {
+                    self.unit = unit
+                    fieldsPopulated += 1
+                    print("🏢 Unit: \(unit)")
                 }
                 if let city = scraped.city, !city.isEmpty {
                     self.city = city
@@ -777,6 +795,7 @@ struct CreatePostView: View {
                     let bedrooms: Int?
                     let bathrooms: String?
                     let address: String?
+                    let unit: String?
                     let city: String?
                     let state: String?
                     let zip_code: String?
@@ -797,6 +816,7 @@ struct CreatePostView: View {
                     bedrooms: bedrooms.isEmpty ? nil : Int(bedrooms),
                     bathrooms: bathrooms.isEmpty ? nil : bathrooms,
                     address: address.isEmpty ? nil : address,
+                    unit: unit.isEmpty ? nil : unit,
                     city: city.isEmpty ? nil : city,
                     state: state.isEmpty ? nil : state,
                     zip_code: zipCode.isEmpty ? nil : zipCode,
@@ -875,6 +895,7 @@ struct CreatePostView: View {
                     let bedrooms: Int?
                     let bathrooms: String?
                     let address: String?
+                    let unit: String?
                     let city: String?
                     let state: String?
                     let zip_code: String?
@@ -889,6 +910,7 @@ struct CreatePostView: View {
                     bedrooms: bedrooms.isEmpty ? nil : Int(bedrooms),
                     bathrooms: bathrooms.isEmpty ? nil : bathrooms,
                     address: address.isEmpty ? nil : address,
+                    unit: unit.isEmpty ? nil : unit,
                     city: city.isEmpty ? nil : city,
                     state: state.isEmpty ? nil : state,
                     zip_code: zipCode.isEmpty ? nil : zipCode,

@@ -12,7 +12,7 @@ import CoreLocation
 struct LocationFeedView: View {
     @State private var homes: [Home] = []
     @State private var allHomes: [Home] = []
-    @State private var isLoading = false
+    @State private var isLoading = true
     @State private var showCreatePost = false
     @State private var selectedState = "All"
     @State private var searchText = ""
@@ -270,12 +270,13 @@ struct PropertyMapView: View {
     @State private var isGeocoding = false
 
     var body: some View {
-        Map(coordinateRegion: $region, annotationItems: mapAnnotations) { annotation in
-            MapAnnotation(coordinate: annotation.coordinate) {
-                annotationView(for: annotation)
+        Map(position: .constant(.region(region))) {
+            ForEach(mapAnnotations) { annotation in
+                Annotation("", coordinate: annotation.coordinate) {
+                    annotationView(for: annotation)
+                }
             }
         }
-        .edgesIgnoringSafeArea(.bottom)
         .onAppear {
             updateRegion()
             geocodeAllHomes()

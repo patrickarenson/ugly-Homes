@@ -10,14 +10,21 @@ import SwiftUI
 struct PriceFeedView: View {
     @State private var homes: [Home] = []
     @State private var allHomes: [Home] = []
-    @State private var isLoading = false
+    @State private var isLoading = true
     @State private var showCreatePost = false
     @State private var sortOrder: PriceSortOrder = .lowToHigh
+    @State private var listingFilter: ListingFilter = .all
     @State private var searchText = ""
 
     enum PriceSortOrder: String, CaseIterable {
         case lowToHigh = "Low to High"
         case highToLow = "High to Low"
+    }
+
+    enum ListingFilter: String, CaseIterable {
+        case all = "All"
+        case rentals = "Rentals"
+        case sales = "Sales"
     }
 
     var filteredHomes: [Home] {
@@ -76,6 +83,18 @@ struct PriceFeedView: View {
                     .cornerRadius(12)
 
                     Menu {
+                        Picker("Filter", selection: $listingFilter) {
+                            ForEach(ListingFilter.allCases, id: \.self) { filter in
+                                Text(filter.rawValue).tag(filter)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.system(size: 24))
+                            .foregroundColor(.primary)
+                    }
+
+                    Menu {
                         Picker("Sort", selection: $sortOrder) {
                             ForEach(PriceSortOrder.allCases, id: \.self) { order in
                                 Text(order.rawValue).tag(order)
@@ -100,23 +119,35 @@ struct PriceFeedView: View {
 
                 Divider()
 
-                ZStack {
-                    if filteredHomes.isEmpty {
-                        VStack(spacing: 20) {
-                            Image(systemName: searchText.isEmpty ? "dollarsign.slash.circle" : "magnifyingglass")
-                                .font(.system(size: 60))
-                                .foregroundColor(.gray)
-                            Text(searchText.isEmpty ? "No priced homes yet" : "No results found")
-                                .font(.title2)
-                                .foregroundColor(.gray)
+                if isLoading {
+                    // Loading skeleton
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(0..<3, id: \.self) { _ in
+                                LoadingSkeletonView()
+                                    .padding(.bottom, 16)
+                            }
                         }
-                    } else {
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(filteredHomes) { home in
-                                    HomePostView(home: home)
-                                        .padding(.bottom, 16)
+                    }
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(filteredHomes) { home in
+                                HomePostView(home: home)
+                                    .padding(.bottom, 16)
+                            }
+
+                            if filteredHomes.isEmpty && !searchText.isEmpty {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.gray.opacity(0.5))
+                                    Text("No results found")
+                                        .font(.headline)
+                                        .foregroundColor(.gray)
                                 }
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 60)
                             }
                         }
                     }
@@ -137,6 +168,9 @@ struct PriceFeedView: View {
             .onChange(of: sortOrder) { oldValue, newValue in
                 loadHomes()
             }
+            .onChange(of: listingFilter) { oldValue, newValue in
+                loadHomes()
+            }
             .onAppear {
                 loadHomes()
             }
@@ -152,14 +186,26 @@ struct PriceFeedView: View {
 
         Task {
             do {
-                print("📥 Loading homes by price (Order: \(sortOrder.rawValue))...")
+                print("📥 Loading homes by price (Order: \(sortOrder.rawValue), Filter: \(listingFilter.rawValue))...")
 
-                let response: [Home] = try await SupabaseManager.shared.client
+                var query = SupabaseManager.shared.client
                     .from("homes")
                     .select("*, profile:user_id(*)")
                     .eq("is_active", value: true)
                     .eq("is_archived", value: false)
                     .not("price", operator: .is, value: "null")
+
+                // Apply listing type filter
+                switch listingFilter {
+                case .rentals:
+                    query = query.eq("listing_type", value: "rental")
+                case .sales:
+                    query = query.eq("listing_type", value: "sale")
+                case .all:
+                    break // No filter needed
+                }
+
+                let response: [Home] = try await query
                     .order("price", ascending: sortOrder == .lowToHigh)
                     .execute()
                     .value

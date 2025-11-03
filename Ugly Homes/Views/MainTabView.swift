@@ -30,7 +30,7 @@ struct MainTabView: View {
 
             MessagesView()
                 .tabItem {
-                    Image(systemName: "message.fill")
+                    Image(systemName: "paperplane.fill")
                         .padding(.top, 10)
                 }
 

@@ -15,6 +15,9 @@ struct AuthView: View {
     @State private var isSignUp = false
     @State private var errorMessage = ""
     @State private var isLoading = false
+    @State private var showForgotPassword = false
+    @State private var resetEmail = ""
+    @State private var showResetSuccess = false
 
     var body: some View {
         ZStack {
@@ -32,25 +35,22 @@ struct AuthView: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                // Logo and title
-                VStack(spacing: 16) {
-                    // Housers Logo
+                // Logo - Bigger and centered
+                VStack(spacing: 20) {
+                    // Housers Logo (transparent background)
                     Image("HousersLogo")
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 120, height: 120)
-                        .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
-
-                    Text("housers")
-                        .font(.system(size: 42, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
+                        .frame(width: 200, height: 200)
+                        .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 8)
 
                     Text("Discover ugly homes, beautiful deals")
-                        .font(.system(size: 15))
-                        .foregroundColor(.white.opacity(0.9))
+                        .font(.system(size: 16))
+                        .foregroundColor(.white.opacity(0.95))
+                        .fontWeight(.medium)
                 }
-                .padding(.bottom, 50)
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 40)
 
                 // Auth card
                 VStack(spacing: 20) {
@@ -140,6 +140,18 @@ struct AuthView: View {
                     .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
                     .disabled(isLoading)
 
+                    // Forgot password (only show on login)
+                    if !isSignUp {
+                        Button(action: {
+                            showForgotPassword = true
+                        }) {
+                            Text("Forgot Password?")
+                                .font(.subheadline)
+                                .foregroundColor(.white.opacity(0.9))
+                                .underline()
+                        }
+                    }
+
                     // Toggle between sign up and login
                     Button(action: {
                         isSignUp.toggle()
@@ -160,6 +172,14 @@ struct AuthView: View {
                 Spacer()
                 Spacer()
             }
+        }
+        .sheet(isPresented: $showForgotPassword) {
+            ForgotPasswordView(showResetSuccess: $showResetSuccess)
+        }
+        .alert("Password Reset Email Sent", isPresented: $showResetSuccess) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Check your email for a link to reset your password.")
         }
     }
 

@@ -6,6 +6,14 @@
 	<array/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>Houser needs access to your camera to take photos of properties you want to post.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Houser needs access to your photo library to select photos of properties you want to post.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Houser needs permission to save property photos to your photo library.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Houser uses your location to show you nearby properties and open houses.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

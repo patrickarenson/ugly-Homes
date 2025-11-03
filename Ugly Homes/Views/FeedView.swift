@@ -672,13 +672,25 @@ struct HomePostView: View {
             .padding(.top, 20)
             .padding(.bottom, 8)
 
-            // Caption
-            HStack(alignment: .top) {
-                Text("@\(home.profile?.username ?? "user")")
-                    .fontWeight(.semibold)
-                + Text(" ")
-                + Text(home.title)
-                    .foregroundColor(.primary)
+            // Caption with @mention support
+            HStack(alignment: .top, spacing: 4) {
+                NavigationLink(destination: {
+                    if let profile = home.profile {
+                        ProfileView(viewingUserId: profile.id)
+                    }
+                }) {
+                    Text("@\(home.profile?.username ?? "user")")
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                }
+
+                // Use MentionText for the title to make @mentions clickable
+                MentionText(
+                    text: home.title,
+                    font: .subheadline,
+                    baseColor: .primary,
+                    mentionColor: .blue
+                )
             }
             .font(.subheadline)
             .padding(.horizontal)

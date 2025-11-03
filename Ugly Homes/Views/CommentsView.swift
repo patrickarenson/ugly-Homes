@@ -193,28 +193,66 @@ struct CommentRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Circle()
-                .fill(Color.gray.opacity(0.3))
-                .frame(width: 36, height: 36)
-                .overlay(
-                    Image(systemName: "person.fill")
-                        .font(.caption)
-                        .foregroundColor(.white)
-                )
+            // Profile photo with navigation
+            NavigationLink(destination: {
+                if let profile = comment.profile {
+                    ProfileView(viewingUserId: profile.id)
+                }
+            }) {
+                if let avatarUrl = comment.profile?.avatarUrl, !avatarUrl.isEmpty, let url = URL(string: avatarUrl) {
+                    AsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 36, height: 36)
+                            .clipShape(Circle())
+                    } placeholder: {
+                        Circle()
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(width: 36, height: 36)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.white)
+                            )
+                    }
+                } else {
+                    Circle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 36, height: 36)
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                        )
+                }
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(comment.profile?.username ?? "User")
-                        .fontWeight(.semibold)
-                        .font(.subheadline)
+                    NavigationLink(destination: {
+                        if let profile = comment.profile {
+                            ProfileView(viewingUserId: profile.id)
+                        }
+                    }) {
+                        Text("@\(comment.profile?.username ?? "user")")
+                            .fontWeight(.semibold)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                    }
 
                     Text(timeAgo(from: comment.createdAt))
                         .font(.caption)
                         .foregroundColor(.gray)
                 }
 
-                Text(comment.commentText)
-                    .font(.subheadline)
+                // Use MentionText for comment text to make @mentions clickable
+                MentionText(
+                    text: comment.commentText,
+                    font: .subheadline,
+                    baseColor: .primary,
+                    mentionColor: .blue
+                )
             }
 
             Spacer()

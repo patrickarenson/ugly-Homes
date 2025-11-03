@@ -215,12 +215,17 @@ struct MessageBubble: View {
             }
 
             VStack(alignment: isFromCurrentUser ? .trailing : .leading, spacing: 4) {
-                Text(message.content)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(isFromCurrentUser ? Color.orange : Color(.systemGray5))
-                    .foregroundColor(isFromCurrentUser ? .white : .primary)
-                    .cornerRadius(16)
+                // Use MentionText for message content to make @mentions clickable
+                MentionText(
+                    text: message.content,
+                    font: .body,
+                    baseColor: isFromCurrentUser ? .white : .primary,
+                    mentionColor: isFromCurrentUser ? .white.opacity(0.9) : .blue
+                )
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(isFromCurrentUser ? Color.orange : Color(.systemGray5))
+                .cornerRadius(16)
 
                 Text(formatTime(message.createdAt))
                     .font(.caption2)

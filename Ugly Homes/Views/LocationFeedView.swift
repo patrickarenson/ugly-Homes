@@ -16,11 +16,12 @@ struct LocationFeedView: View {
     @State private var showCreatePost = false
     @State private var selectedState = "All"
     @State private var searchText = ""
-    @State private var showMapView = false
+    @State private var showMapView = true
     @State private var selectedHome: Home?
     @State private var showOpenHouseList = false
     @StateObject private var locationManager = LocationManager()
     @State private var savedOpenHouseIds: Set<UUID> = []
+    @State private var lastViewedOpenHouseCount = UserDefaults.standard.integer(forKey: "lastViewedOpenHouseCount")
 
     let usStates = ["All", "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
                     "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA",
@@ -32,17 +33,38 @@ struct LocationFeedView: View {
         if searchText.isEmpty {
             return homes
         } else {
-            return allHomes.filter { home in
-                if let username = home.profile?.username, username.lowercased().contains(searchText.lowercased()) {
+            let filtered = allHomes.filter { home in
+                let search = searchText.lowercased()
+
+                // Debug: Print profile info for first home
+                if home.id == allHomes.first?.id {
+                    print("🔍 [LocationView] DEBUG - First home profile: \(home.profile?.username ?? "NO USERNAME")")
+                    print("🔍 [LocationView] DEBUG - Searching for: '\(searchText)'")
+                }
+
+                // Search by tags (hashtags)
+                if let tags = home.tags {
+                    for tag in tags {
+                        if tag.lowercased().contains(search) {
+                            return true
+                        }
+                    }
+                }
+
+                // Search by username
+                if let username = home.profile?.username, username.lowercased().contains(search) {
+                    print("✅ [LocationView] Found match in username: \(username)")
                     return true
                 }
-                if let address = home.address, address.lowercased().contains(searchText.lowercased()) {
+
+                // Search by address, city, state, zip
+                if let address = home.address, address.lowercased().contains(search) {
                     return true
                 }
-                if let city = home.city, city.lowercased().contains(searchText.lowercased()) {
+                if let city = home.city, city.lowercased().contains(search) {
                     return true
                 }
-                if let state = home.state, state.lowercased().contains(searchText.lowercased()) {
+                if let state = home.state, state.lowercased().contains(search) {
                     return true
                 }
                 if let zipCode = home.zipCode, zipCode.contains(searchText) {
@@ -50,6 +72,9 @@ struct LocationFeedView: View {
                 }
                 return false
             }
+
+            print("🔍 [LocationView] Search for '\(searchText)' returned \(filtered.count) results")
+            return filtered
         }
     }
 
@@ -78,7 +103,7 @@ struct LocationFeedView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // Search bar
+                // Header bar (search bar only shows in list view)
                 HStack(spacing: 12) {
                     // Open House List button (left side)
                     Button(action: {
@@ -89,9 +114,9 @@ struct LocationFeedView: View {
                                 .font(.system(size: 24))
                                 .foregroundColor(.green)
 
-                            // Badge showing count of upcoming open houses
-                            if upcomingOpenHouses.count > 0 {
-                                Text("\(upcomingOpenHouses.count)")
+                            // Badge showing count of NEW upcoming open houses
+                            if upcomingOpenHouses.count > lastViewedOpenHouseCount {
+                                Text("\(upcomingOpenHouses.count - lastViewedOpenHouseCount)")
                                     .font(.system(size: 10, weight: .bold))
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 4)
@@ -103,30 +128,35 @@ struct LocationFeedView: View {
                         }
                     }
 
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 14))
+                    // Search bar - only show in list view
+                    if !showMapView {
+                        HStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 14))
 
-                        TextField("Search by address or zip code", text: $searchText)
-                            .textFieldStyle(.plain)
-                            .autocorrectionDisabled()
-                            .font(.system(size: 15))
+                            TextField("Search by tag, username, or address", text: $searchText)
+                                .textFieldStyle(.plain)
+                                .autocorrectionDisabled()
+                                .font(.system(size: 15))
 
-                        if !searchText.isEmpty {
-                            Button(action: {
-                                searchText = ""
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.secondary)
-                                    .font(.system(size: 14))
+                            if !searchText.isEmpty {
+                                Button(action: {
+                                    searchText = ""
+                                }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.secondary)
+                                        .font(.system(size: 14))
+                                }
                             }
                         }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                    } else {
+                        Spacer()
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
 
                     // Toggle between map and list view
                     Button(action: {
@@ -146,7 +176,8 @@ struct LocationFeedView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.vertical, 8)
+                .background(Color(.systemBackground))
 
                 Divider()
 
@@ -164,19 +195,39 @@ struct LocationFeedView: View {
                     // List view
                     ZStack {
                         if filteredHomes.isEmpty {
-                            VStack(spacing: 20) {
-                                Image(systemName: searchText.isEmpty ? "map.slash" : "magnifyingglass")
+                            VStack(spacing: 16) {
+                                Image(systemName: searchText.isEmpty ? "map" : "magnifyingglass")
                                     .font(.system(size: 60))
                                     .foregroundColor(.gray)
-                                Text(searchText.isEmpty ? "No homes in this area" : "No results found")
-                                    .font(.title2)
-                                    .foregroundColor(.gray)
+
+                                if searchText.isEmpty {
+                                    Text("No homes in this area yet")
+                                        .font(.title2)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.primary)
+
+                                    Text("Be the first to post a property here!")
+                                        .font(.subheadline)
+                                        .foregroundColor(.gray)
+                                        .multilineTextAlignment(.center)
+                                        .padding(.horizontal, 40)
+                                } else {
+                                    Text("No results found")
+                                        .font(.title2)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.primary)
+
+                                    Text("Try searching for a different property")
+                                        .font(.subheadline)
+                                        .foregroundColor(.gray)
+                                }
                             }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
                             ScrollView {
                                 LazyVStack(spacing: 0) {
                                     ForEach(filteredHomes) { home in
-                                        HomePostView(home: home)
+                                        HomePostView(home: home, searchText: $searchText)
                                             .padding(.bottom, 16)
                                     }
                                 }
@@ -198,7 +249,7 @@ struct LocationFeedView: View {
             .sheet(item: $selectedHome) { home in
                 NavigationView {
                     ScrollView {
-                        HomePostView(home: home)
+                        HomePostView(home: home, searchText: $searchText)
                     }
                     .navigationTitle("Property")
                     .navigationBarTitleDisplayMode(.inline)
@@ -244,6 +295,8 @@ struct LocationFeedView: View {
             }
             .onAppear {
                 print("🗺️ LocationFeedView appeared")
+                // Always reset to map view when user taps the map icon
+                showMapView = true
                 loadHomes()
                 loadSavedOpenHouses()
                 locationManager.requestLocation()
@@ -252,7 +305,7 @@ struct LocationFeedView: View {
                 // Reload saved open houses when opening the list to get latest
                 if newValue {
                     print("🏠 Opening open house list, refreshing saved items")
-                    loadSavedOpenHouses()
+                    loadSavedOpenHouses(markAsViewed: true)
                 }
             }
             .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("RefreshOpenHouseList"))) { _ in
@@ -300,7 +353,7 @@ struct LocationFeedView: View {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
-    func loadSavedOpenHouses() {
+    func loadSavedOpenHouses(markAsViewed: Bool = false) {
         Task {
             do {
                 print("📅 Loading saved open houses...")
@@ -327,6 +380,13 @@ struct LocationFeedView: View {
                     print("✅ Loaded \(savedOpenHouseIds.count) saved open houses")
                     print("   Saved IDs: \(savedOpenHouseIds.map { $0.uuidString })")
                     print("   Upcoming open houses count: \(upcomingOpenHouses.count)")
+
+                    // If user opened the list, save the count to mark as viewed
+                    if markAsViewed {
+                        lastViewedOpenHouseCount = upcomingOpenHouses.count
+                        UserDefaults.standard.set(lastViewedOpenHouseCount, forKey: "lastViewedOpenHouseCount")
+                        print("📝 Saved viewed count: \(lastViewedOpenHouseCount)")
+                    }
                 }
             } catch {
                 print("❌ Error loading saved open houses: \(error)")
@@ -407,23 +467,49 @@ struct PropertyMapView: View {
     let userLocation: CLLocationCoordinate2D?
     @Binding var selectedHome: Home?
     @State private var region = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194), // Default to San Francisco
-        span: MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
+        center: CLLocationCoordinate2D(latitude: 28.5383, longitude: -81.3792), // Orlando, Florida
+        span: MKCoordinateSpan(latitudeDelta: 1.0, longitudeDelta: 1.0) // Show Central Florida area
     )
     @State private var geocodedCoordinates: [UUID: CLLocationCoordinate2D] = [:]
     @State private var isGeocoding = false
+    @State private var isLoadingLocation = true
 
     var body: some View {
-        Map(position: .constant(.region(region))) {
-            ForEach(mapAnnotations) { annotation in
-                Annotation("", coordinate: annotation.coordinate) {
-                    annotationView(for: annotation)
+        ZStack {
+            Map(position: .constant(.region(region))) {
+                ForEach(mapAnnotations) { annotation in
+                    Annotation("", coordinate: annotation.coordinate) {
+                        annotationView(for: annotation)
+                    }
                 }
+            }
+
+            // Loading overlay
+            if isLoadingLocation {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .scaleEffect(1.2)
+
+                    Text("Customizing your search based on your location...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                }
+                .padding(20)
+                .background(Color(.systemBackground).opacity(0.95))
+                .cornerRadius(12)
+                .shadow(radius: 5)
             }
         }
         .onAppear {
             updateRegion()
             geocodeAllHomes()
+
+            // Hide loading message after 2 seconds or when location is found
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                isLoadingLocation = false
+            }
         }
     }
 
@@ -558,15 +644,23 @@ struct PropertyMapView: View {
     }
 
     func updateRegion() {
-        // Center on user location if available
+        // Center on user location if available (priority #1)
         if let userLocation = userLocation {
             region.center = userLocation
-            region.span = MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+            region.span = MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2) // Show ~20 mile radius
+            isLoadingLocation = false // Hide loading message
+            print("📍 Map centered on user location: \(userLocation.latitude), \(userLocation.longitude)")
         }
-        // Otherwise, if we have homes, center on them
+        // Otherwise, if we have homes, center on first home
         else if let firstHome = homes.first, let coordinate = getCoordinate(for: firstHome) {
             region.center = coordinate
-            region.span = MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
+            region.span = MKCoordinateSpan(latitudeDelta: 1.0, longitudeDelta: 1.0)
+            isLoadingLocation = false // Hide loading message
+            print("📍 Map centered on first home: \(firstHome.city ?? "unknown city")")
+        }
+        // Otherwise keep showing Orlando, FL
+        else {
+            print("📍 Map showing Orlando, FL (default - no user location or homes yet)")
         }
     }
 
@@ -868,7 +962,7 @@ struct OpenHouseRowView: View {
 
             HStack(spacing: 16) {
                 // Distance
-                if let userLoc = userLocation {
+                if userLocation != nil {
                     HStack(spacing: 4) {
                         Image(systemName: "location.fill")
                             .font(.caption)

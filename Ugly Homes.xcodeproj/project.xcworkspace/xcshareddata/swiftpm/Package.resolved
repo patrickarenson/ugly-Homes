@@ -1,5 +1,5 @@
 {
-  "originHash" : "6e96c028320dea4a8d1fd483e45d6cb031bba2cd24ec2a3684fa81e41344e23b",
+  "originHash" : "452646f786bde89bb5ab8f160c610bc89a19dd1fc3100eb67750b481f0d852c8",
   "pins" : [
     {
       "identity" : "stripe-ios",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/supabase/supabase-swift",
       "state" : {
-        "revision" : "0e8b8f6dd0c1d17a2a49f16857a64a13c158ef60",
-        "version" : "2.36.0"
+        "revision" : "65507b524f0ec09ebb6f6b1db0db1a8e4265436e",
+        "version" : "2.37.0"
       }
     },
     {

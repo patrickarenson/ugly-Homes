@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Foundation
 
 struct CommentsView: View {
     let home: Home
@@ -14,6 +15,16 @@ struct CommentsView: View {
     @State private var newComment = ""
     @State private var isLoading = false
     @State private var isSending = false
+
+    // Housers Estimate state
+    @State private var upVoted = false
+    @State private var downVoted = false
+    @State private var estimatedPrice: Int
+
+    init(home: Home) {
+        self.home = home
+        _estimatedPrice = State(initialValue: NSDecimalNumber(decimal: home.price ?? 0).intValue)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,6 +39,100 @@ struct CommentsView: View {
                     .font(.headline)
                     .padding(.bottom, 8)
             }
+
+            Divider()
+
+            // Property summary
+            VStack(alignment: .leading, spacing: 8) {
+                // Address (Line 1)
+                if let address = home.address, !address.isEmpty {
+                    Text(address)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                } else if let city = home.city, let state = home.state {
+                    Text("\(city), \(state)")
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                }
+
+                // Property details - bed/bath (Line 2)
+                HStack(spacing: 12) {
+                // Bedrooms
+                if let bedrooms = home.bedrooms {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bed.double.fill")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        Text("\(bedrooms)")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                }
+
+                // Bathrooms
+                if let bathrooms = home.bathrooms {
+                    HStack(spacing: 4) {
+                        Image(systemName: "shower.fill")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        Text(String(format: "%.1f", Double(truncating: bathrooms as NSNumber)))
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                }
+
+                Spacer()
+
+                // Housers Estimate on right side
+                if home.price != nil {
+                    VStack(spacing: 2) {
+                        Text("Housers Estimate")
+                            .font(.system(size: 9))
+                            .foregroundColor(.gray)
+
+                        HStack(spacing: 4) {
+                            // Up arrow button
+                            Button(action: {
+                                submitPriceVote(voteType: "up")
+                            }) {
+                                Image(systemName: "arrow.up")
+                                    .font(.title3)
+                                    .foregroundColor(upVoted ? .green : .gray)
+                            }
+                            .disabled(upVoted || downVoted)
+
+                            // Estimated price
+                            Text(formatPrice(estimatedPrice))
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.orange)
+
+                            // Down arrow button
+                            Button(action: {
+                                submitPriceVote(voteType: "down")
+                            }) {
+                                Image(systemName: "arrow.down")
+                                    .font(.title3)
+                                    .foregroundColor(downVoted ? .red : .gray)
+                            }
+                            .disabled(upVoted || downVoted)
+                        }
+                    }
+                }
+                }
+
+                // Price (Line 3)
+                if let price = home.price {
+                    let priceInt = Int(truncating: price as NSNumber)
+                    Text("Listed for $\(formatPrice(priceInt))")
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(Color(.systemGroupedBackground))
 
             Divider()
 
@@ -93,6 +198,7 @@ struct CommentsView: View {
         }
         .onAppear {
             loadComments()
+            loadCommunityPrice()
         }
     }
 
@@ -207,7 +313,7 @@ struct CommentsView: View {
                         home_id: home.id.uuidString
                     )
 
-                    try? await SupabaseManager.shared.client
+                    _ = try? await SupabaseManager.shared.client
                         .from("notifications")
                         .insert(notification)
                         .execute()
@@ -223,6 +329,85 @@ struct CommentsView: View {
                 isSending = false
             }
         }
+    }
+
+    func submitPriceVote(voteType: String) {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                struct PriceVoteInsert: Encodable {
+                    let homeId: String
+                    let userId: String
+                    let voteType: String
+
+                    enum CodingKeys: String, CodingKey {
+                        case homeId = "home_id"
+                        case userId = "user_id"
+                        case voteType = "vote_type"
+                    }
+                }
+
+                let vote = PriceVoteInsert(
+                    homeId: home.id.uuidString,
+                    userId: userId.uuidString,
+                    voteType: voteType
+                )
+
+                try await SupabaseManager.shared.client
+                    .from("price_votes")
+                    .upsert(vote)
+                    .execute()
+
+                // Update local state
+                if voteType == "up" {
+                    upVoted = true
+                    downVoted = false
+                } else {
+                    downVoted = true
+                    upVoted = false
+                }
+
+                print("✅ Price vote submitted: \(voteType)")
+
+                // Reload community price to see the effect
+                loadCommunityPrice()
+            } catch {
+                print("❌ Error submitting price vote: \(error)")
+            }
+        }
+    }
+
+    func loadCommunityPrice() {
+        guard home.price != nil else { return }
+
+        Task {
+            do {
+                print("🔄 Loading community price for home: \(home.id)")
+
+                // RPC functions return values directly, not wrapped in objects
+                let response: Decimal = try await SupabaseManager.shared.client
+                    .rpc("get_community_price", params: ["home_id_param": home.id.uuidString])
+                    .single()
+                    .execute()
+                    .value
+
+                estimatedPrice = NSDecimalNumber(decimal: response).intValue
+                print("📊 Community price loaded: $\(estimatedPrice) (original: $\(NSDecimalNumber(decimal: home.price ?? 0).intValue))")
+            } catch {
+                print("❌ Error loading community price: \(error)")
+                print("❌ Error details: \(error.localizedDescription)")
+                // Fallback to original price if community price fails
+                estimatedPrice = NSDecimalNumber(decimal: home.price ?? 0).intValue
+            }
+        }
+    }
+
+    func formatPrice(_ price: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        return formatter.string(from: NSNumber(value: price)) ?? "\(price)"
     }
 }
 

@@ -15,34 +15,58 @@ struct FeedView: View {
     @State private var searchText = ""
     @State private var showNotifications = false
     @State private var unreadNotificationsCount = 0
+    @State private var newlyCreatedPostIds: Set<UUID> = [] // Track posts created this session
 
     var filteredHomes: [Home] {
         if searchText.isEmpty {
             return homes
         } else {
-            return allHomes.filter { home in
+            // Debug: Print all usernames in feed
+            if allHomes.first?.id == allHomes.first?.id {
+                print("🔍 [FeedView] Total homes in feed: \(allHomes.count)")
+                print("🔍 [FeedView] All usernames in feed:")
+                for (index, home) in allHomes.prefix(10).enumerated() {
+                    print("   \(index + 1). \(home.profile?.username ?? "NO USERNAME") (ID: \(home.userId))")
+                }
+                print("🔍 [FeedView] Searching for: '\(searchText)'")
+            }
+
+            let filtered = allHomes.filter { home in
+                let search = searchText.lowercased()
+
+                // Search by tags (hashtags)
+                if let tags = home.tags {
+                    for tag in tags {
+                        if tag.lowercased().contains(search) {
+                            return true
+                        }
+                    }
+                }
+
                 // Search by username
-                if let username = home.profile?.username, username.lowercased().contains(searchText.lowercased()) {
+                if let username = home.profile?.username, username.lowercased().contains(search) {
+                    print("✅ [FeedView] Found match in username: \(username)")
                     return true
                 }
-                // Search by address
-                if let address = home.address, address.lowercased().contains(searchText.lowercased()) {
+
+                // Search by address, city, state, zip
+                if let address = home.address, address.lowercased().contains(search) {
                     return true
                 }
-                // Search by city
-                if let city = home.city, city.lowercased().contains(searchText.lowercased()) {
+                if let city = home.city, city.lowercased().contains(search) {
                     return true
                 }
-                // Search by state
-                if let state = home.state, state.lowercased().contains(searchText.lowercased()) {
+                if let state = home.state, state.lowercased().contains(search) {
                     return true
                 }
-                // Search by zip code
                 if let zipCode = home.zipCode, zipCode.contains(searchText) {
                     return true
                 }
                 return false
             }
+
+            print("🔍 [FeedView] Search for '\(searchText)' returned \(filtered.count) results")
+            return filtered
         }
     }
 
@@ -79,7 +103,7 @@ struct FeedView: View {
                             .foregroundColor(.secondary)
                             .font(.system(size: 14))
 
-                        TextField("Search", text: $searchText)
+                        TextField("Search by tag, username, or address", text: $searchText)
                             .textFieldStyle(.plain)
                             .autocorrectionDisabled()
                             .font(.system(size: 15))
@@ -108,43 +132,64 @@ struct FeedView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.vertical, 8)
+                .background(Color(.systemBackground))
 
                 Divider()
 
                 // Content
-                ZStack {
-                    if isLoading {
-                        // Loading skeleton (Instagram-style)
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(0..<3, id: \.self) { _ in
-                                    LoadingSkeletonView()
-                                        .padding(.bottom, 16)
-                                }
+                if isLoading {
+                    // Loading skeleton (Instagram-style)
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(0..<3, id: \.self) { _ in
+                                LoadingSkeletonView()
+                                    .padding(.bottom, 16)
                             }
                         }
-                    } else if filteredHomes.isEmpty {
-                        VStack(spacing: 20) {
-                            Image(systemName: searchText.isEmpty ? "house.slash" : "magnifyingglass")
+                    }
+                } else if filteredHomes.isEmpty {
+                    VStack(spacing: 16) {
+                        if searchText.isEmpty {
+                            // Housers logo for empty state
+                            if let logo = UIImage(named: "HousersLogo") {
+                                Image(uiImage: logo)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 120, height: 120)
+                            } else {
+                                Image(systemName: "house.fill")
+                                    .font(.system(size: 60))
+                                    .foregroundColor(.orange)
+                            }
+
+                            Text("Be the first to post your newest real estate project or listing")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 40)
+                        } else {
+                            Image(systemName: "magnifyingglass")
                                 .font(.system(size: 60))
                                 .foregroundColor(.gray)
-                            Text(searchText.isEmpty ? "No homes yet" : "No results found")
+
+                            Text("No results found")
                                 .font(.title2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
+
+                            Text("Try searching for a different property")
+                                .font(.subheadline)
                                 .foregroundColor(.gray)
-                            if searchText.isEmpty {
-                                Text("Be the first to post an ugly home!")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
-                            }
                         }
-                    } else {
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(filteredHomes) { home in
-                                    HomePostView(home: home)
-                                        .padding(.bottom, 16)
-                                }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(filteredHomes) { home in
+                                HomePostView(home: home, searchText: $searchText)
+                                    .padding(.bottom, 16)
                             }
                         }
                     }
@@ -173,8 +218,19 @@ struct FeedView: View {
                 }
             }
             .onAppear {
+                print("🎬 FeedView appeared - loading homes...")
                 loadHomes()
                 loadUnreadNotificationsCount()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NewPostCreated"))) { notification in
+                print("📢 RECEIVED NewPostCreated notification!")
+                // Track the newly created post ID
+                if let postId = notification.userInfo?["postId"] as? UUID {
+                    print("🆕 Adding post ID to session tracking: \(postId)")
+                    newlyCreatedPostIds.insert(postId)
+                }
+                print("🔄 New post created, reloading feed...")
+                loadHomes()
             }
             .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("RefreshFeed"))) { _ in
                 loadHomes()
@@ -193,6 +249,7 @@ struct FeedView: View {
     }
 
     func loadHomes() {
+        print("🔄 loadHomes() called")
         isLoading = true
 
         Task {
@@ -202,6 +259,7 @@ struct FeedView: View {
                 // Get current user ID
                 let userId = try await SupabaseManager.shared.client.auth.session.user.id
                 print("👤 Current user ID: \(userId)")
+                print("👤 Current user ID string: \(userId.uuidString)")
 
                 // Call the get_trending_homes RPC function
                 struct TrendingHomeResponse: Codable {
@@ -220,9 +278,6 @@ struct FeedView: View {
                     let imageUrls: [String]
                     let likesCount: Int
                     let commentsCount: Int
-                    let viewCount: Int?
-                    let shareCount: Int?
-                    let saveCount: Int?
                     let isActive: Bool
                     let isArchived: Bool?
                     let archivedAt: Date?
@@ -233,6 +288,7 @@ struct FeedView: View {
                     let openHousePaid: Bool?
                     let subscriptionId: String?
                     let expiresAt: Date?
+                    let tags: [String]?
                     let createdAt: Date
                     let updatedAt: Date
                     let trendingScore: Decimal
@@ -253,9 +309,6 @@ struct FeedView: View {
                         case imageUrls = "image_urls"
                         case likesCount = "likes_count"
                         case commentsCount = "comments_count"
-                        case viewCount = "view_count"
-                        case shareCount = "share_count"
-                        case saveCount = "save_count"
                         case isActive = "is_active"
                         case isArchived = "is_archived"
                         case archivedAt = "archived_at"
@@ -266,6 +319,7 @@ struct FeedView: View {
                         case openHousePaid = "open_house_paid"
                         case subscriptionId = "subscription_id"
                         case expiresAt = "expires_at"
+                        case tags
                         case createdAt = "created_at"
                         case updatedAt = "updated_at"
                         case trendingScore = "trending_score"
@@ -273,7 +327,7 @@ struct FeedView: View {
                 }
 
                 let response: [TrendingHomeResponse] = try await SupabaseManager.shared.client
-                    .rpc("get_trending_homes", params: ["current_user_id": userId.uuidString])
+                    .rpc("get_trending_homes", params: ["requesting_user_id": userId])
                     .execute()
                     .value
 
@@ -347,9 +401,9 @@ struct FeedView: View {
                         imageUrls: homeResponse.imageUrls,
                         likesCount: homeResponse.likesCount,
                         commentsCount: homeResponse.commentsCount,
-                        viewCount: homeResponse.viewCount,
-                        shareCount: homeResponse.shareCount,
-                        saveCount: homeResponse.saveCount,
+                        viewCount: nil,
+                        shareCount: nil,
+                        saveCount: nil,
                         isActive: homeResponse.isActive,
                         isArchived: homeResponse.isArchived,
                         archivedAt: homeResponse.archivedAt,
@@ -361,6 +415,7 @@ struct FeedView: View {
                         stripePaymentId: nil,
                         subscriptionId: homeResponse.subscriptionId,
                         expiresAt: homeResponse.expiresAt,
+                        tags: homeResponse.tags,
                         createdAt: homeResponse.createdAt,
                         updatedAt: homeResponse.updatedAt
                     )
@@ -369,13 +424,48 @@ struct FeedView: View {
                     homesWithProfiles.append(home)
                 }
 
-                homes = homesWithProfiles
-                allHomes = homesWithProfiles
+                // Sort homes to put newly created posts first (this session only)
+                let sortedHomes = homesWithProfiles.sorted { home1, home2 in
+                    let isNew1 = newlyCreatedPostIds.contains(home1.id)
+                    let isNew2 = newlyCreatedPostIds.contains(home2.id)
+
+                    if isNew1 && !isNew2 {
+                        return true // home1 is new, put it first
+                    } else if !isNew1 && isNew2 {
+                        return false // home2 is new, put it first
+                    } else if isNew1 && isNew2 {
+                        // Both are new - sort by creation date (newest first)
+                        return home1.createdAt > home2.createdAt
+                    } else {
+                        // Neither are new - keep trending order
+                        return false
+                    }
+                }
+
+                homes = sortedHomes
+                allHomes = sortedHomes
+
+                // Print newly created posts (this session)
+                if !newlyCreatedPostIds.isEmpty {
+                    print("🆕 Session-created posts (will appear first):")
+                    for id in newlyCreatedPostIds {
+                        if let home = sortedHomes.first(where: { $0.id == id }) {
+                            print("   - \(home.title)")
+                        }
+                    }
+                }
 
                 // Print trending scores for debugging
+                print("===== TRENDING SCORES =====")
                 for (index, homeResponse) in response.prefix(5).enumerated() {
-                    print("📊 #\(index + 1): \(homeResponse.title) - Score: \(homeResponse.trendingScore)")
+                    let isOwnPost = homeResponse.userId == userId
+                    print("📊 #\(index + 1): \(homeResponse.title)")
+                    print("   Score: \(homeResponse.trendingScore)")
+                    print("   Own: \(isOwnPost ? "✅ YES" : "❌ NO")")
+                    print("   Post UserID: \(homeResponse.userId)")
                 }
+                print("👤 Requesting User ID: \(userId)")
+                print("==========================")
 
                 isLoading = false
             } catch {
@@ -411,6 +501,7 @@ struct HomePostView: View {
     let home: Home
     let showSoldOptions: Bool
     let preloadedUserId: UUID?
+    @Binding var searchText: String
     @State private var showComments = false
     @State private var isLiked = false
     @State private var likeCount: Int
@@ -436,8 +527,9 @@ struct HomePostView: View {
     @State private var isOpenHouseSaved = false
     @State private var showOpenHouseSavedMessage = false
 
-    init(home: Home, showSoldOptions: Bool = true, preloadedUserId: UUID? = nil) {
+    init(home: Home, searchText: Binding<String>, showSoldOptions: Bool = true, preloadedUserId: UUID? = nil) {
         self.home = home
+        self._searchText = searchText
         self.showSoldOptions = showSoldOptions
         self.preloadedUserId = preloadedUserId
         _likeCount = State(initialValue: home.likesCount)
@@ -488,17 +580,15 @@ struct HomePostView: View {
                     }
                 }
 
-                NavigationLink(destination: {
-                    if let profile = home.profile {
-                        ProfileView(viewingUserId: profile.id)
-                    }
-                }) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
+                    // Line 1: Username + badges
+                    HStack(spacing: 8) {
+                        NavigationLink(destination: ProfileView(viewingUserId: home.userId)) {
                             Text("\(home.profile?.username ?? "user")")
-                                .font(.system(size: 13))
+                                .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.primary)
+                        }
 
                         // Sold/Leased/Pending badge
                         if let status = soldStatus {
@@ -530,9 +620,9 @@ struct HomePostView: View {
                         }
                     }
 
-                    // Show address, city format (e.g., "123 Main St, San Francisco")
-                    if let address = home.address, !address.isEmpty, let city = home.city {
-                        Text("\(address), \(city)")
+                    // Line 2: Address
+                    if let address = home.address, !address.isEmpty {
+                        Text(address)
                             .font(.caption)
                             .foregroundColor(.gray)
                             .lineLimit(1)
@@ -540,24 +630,6 @@ struct HomePostView: View {
                         Text("\(city), \(state)")
                             .font(.caption)
                             .foregroundColor(.gray)
-                    }
-
-                    // Show sold/leased date
-                    if let status = soldStatus, let date = soldDate {
-                        Text("\(status == "sold" ? "Sold" : "Leased") on \(formatDate(date))")
-                            .font(.system(size: 11))
-                            .foregroundColor(.gray)
-                    }
-
-                    // Show open house date/time - only if hasn't expired
-                    if let openHouseDate = home.openHouseDate, home.openHousePaid == true {
-                        let endDate = home.openHouseEndDate ?? openHouseDate.addingTimeInterval(7200)
-                        if endDate > Date() {
-                            Text("Open House: \(formatOpenHouse(date: openHouseDate, endDate: home.openHouseEndDate))")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(.green)
-                        }
-                    }
                     }
                 }
 
@@ -575,6 +647,17 @@ struct HomePostView: View {
             }
             .padding(.horizontal)
             .padding(.vertical, 10)
+
+            // Tags
+            if let tags = home.tags, !tags.isEmpty {
+                TagListView(tags: tags, maxTags: 4) { tag in
+                    // Filter feed by tag
+                    searchText = tag
+                    print("🏷️ Tapped tag: \(tag) - Filtering feed")
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+            }
 
             // Image Carousel
             VStack(spacing: 0) {
@@ -732,111 +815,67 @@ struct HomePostView: View {
                 }
 
                 Spacer()
-
-                // User-Generated Pricing Feature - Right Side
-                if home.price != nil {
-                    VStack(spacing: 2) {
-                        Text("Housers Estimate")
-                            .font(.system(size: 9))
-                            .foregroundColor(.gray)
-
-                        HStack(spacing: 4) {
-                            // Up arrow button
-                            Button(action: {
-                                submitPriceVote(voteType: "up")
-                            }) {
-                                Image(systemName: "arrow.up")
-                                    .font(.title3)
-                                    .foregroundColor(upVoted ? .green : .gray)
-                            }
-                            .disabled(upVoted || downVoted)
-
-                            // Estimated price in orange (bold with commas)
-                            Text(formatPrice(estimatedPrice))
-                                .font(.subheadline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.orange)
-
-                            // Down arrow button
-                            Button(action: {
-                                submitPriceVote(voteType: "down")
-                            }) {
-                                Image(systemName: "arrow.down")
-                                    .font(.title3)
-                                    .foregroundColor(downVoted ? .red : .gray)
-                            }
-                            .disabled(upVoted || downVoted)
-                        }
-                    }
-                }
             }
             .foregroundColor(.black)
             .padding(.horizontal)
             .padding(.top, 20)
             .padding(.bottom, 8)
 
-            // Caption with @mention support
-            HStack(alignment: .top, spacing: 4) {
-                NavigationLink(destination: {
-                    if let profile = home.profile {
-                        ProfileView(viewingUserId: profile.id)
-                    }
-                }) {
+            // Property details (bed/bath/price)
+            HStack(spacing: 12) {
+                // Username (clickable to profile)
+                NavigationLink(destination: ProfileView(viewingUserId: home.userId)) {
                     Text("\(home.profile?.username ?? "user")")
+                        .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
                 }
 
-                // Use MentionText for the title to make @mentions clickable
-                MentionText(
-                    text: home.title,
-                    font: .subheadline,
-                    baseColor: .primary,
-                    mentionColor: .blue
-                )
+                // Bedrooms
+                if let bedrooms = home.bedrooms {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bed.double.fill")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        Text("\(bedrooms)")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                }
+
+                // Bathrooms
+                if let bathrooms = home.bathrooms {
+                    HStack(spacing: 4) {
+                        Image(systemName: "shower.fill")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        Text(String(format: "%.1f", Double(truncating: bathrooms as NSNumber)))
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                }
+
+                // Price (single dollar sign)
+                if let price = home.price {
+                    let priceInt = Int(truncating: price as NSNumber)
+                    Text("\(formatPrice(priceInt))")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                }
+
+                Spacer()
             }
-            .font(.subheadline)
             .padding(.horizontal)
             .padding(.top, 2)
 
-            // Bedrooms, Bathrooms, and Price
-            HStack(spacing: 16) {
-                if let bedrooms = home.bedrooms {
-                    HStack(spacing: 5) {
-                        Image(systemName: "bed.double.fill")
-                            .font(.system(size: 14))
-                        Text("\(bedrooms) bd")
-                            .font(.system(size: 13))
-                    }
-                    .foregroundColor(.secondary)
-                }
-
-                if let bathrooms = home.bathrooms {
-                    HStack(spacing: 5) {
-                        Image(systemName: "shower.fill")
-                            .font(.system(size: 14))
-                        Text("\(NSDecimalNumber(decimal: bathrooms).doubleValue, specifier: "%.1f") ba")
-                            .font(.system(size: 13))
-                    }
-                    .foregroundColor(.secondary)
-                }
-
-                if let price = home.price {
-                    Text("Listed for \(formatPriceFromDecimal(price))")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.primary)
-                }
-            }
-            .padding(.horizontal)
-            .padding(.top, 6)
-
-            // View comments
+            // View comments button
             if home.commentsCount > 0 {
                 Button(action: {
                     showComments = true
                 }) {
                     Text("View all \(home.commentsCount) comments")
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundColor(.gray)
                 }
                 .padding(.horizontal)
@@ -1067,7 +1106,7 @@ struct HomePostView: View {
                             home_id: home.id.uuidString
                         )
 
-                        try? await SupabaseManager.shared.client
+                        _ = try? await SupabaseManager.shared.client
                             .from("notifications")
                             .insert(notification)
                             .execute()

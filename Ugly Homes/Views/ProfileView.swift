@@ -19,6 +19,7 @@ struct ProfileView: View {
     @State private var showPostDetail = false
     @State private var currentUserId: UUID?
     @State private var showChat = false
+    @State private var searchText = "" // For tag filtering
 
     init(viewingUserId: UUID? = nil) {
         self.viewingUserId = viewingUserId
@@ -290,7 +291,7 @@ struct ProfileView: View {
             if let home = selectedHome {
                 NavigationView {
                     ScrollView {
-                        HomePostView(home: home, showSoldOptions: !isViewingOtherProfile, preloadedUserId: currentUserId)
+                        HomePostView(home: home, searchText: $searchText, showSoldOptions: !isViewingOtherProfile, preloadedUserId: currentUserId)
                     }
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {

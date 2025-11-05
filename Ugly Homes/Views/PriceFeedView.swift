@@ -31,17 +31,38 @@ struct PriceFeedView: View {
         if searchText.isEmpty {
             return homes
         } else {
-            return allHomes.filter { home in
-                if let username = home.profile?.username, username.lowercased().contains(searchText.lowercased()) {
+            let filtered = allHomes.filter { home in
+                let search = searchText.lowercased()
+
+                // Debug: Print profile info for first home
+                if home.id == allHomes.first?.id {
+                    print("🔍 DEBUG - First home profile: \(home.profile?.username ?? "NO USERNAME")")
+                    print("🔍 DEBUG - Searching for: '\(searchText)'")
+                }
+
+                // Search by tags (hashtags)
+                if let tags = home.tags {
+                    for tag in tags {
+                        if tag.lowercased().contains(search) {
+                            return true
+                        }
+                    }
+                }
+
+                // Search by username
+                if let username = home.profile?.username, username.lowercased().contains(search) {
+                    print("✅ Found match in username: \(username)")
                     return true
                 }
-                if let address = home.address, address.lowercased().contains(searchText.lowercased()) {
+
+                // Search by address, city, state, zip
+                if let address = home.address, address.lowercased().contains(search) {
                     return true
                 }
-                if let city = home.city, city.lowercased().contains(searchText.lowercased()) {
+                if let city = home.city, city.lowercased().contains(search) {
                     return true
                 }
-                if let state = home.state, state.lowercased().contains(searchText.lowercased()) {
+                if let state = home.state, state.lowercased().contains(search) {
                     return true
                 }
                 if let zipCode = home.zipCode, zipCode.contains(searchText) {
@@ -49,20 +70,23 @@ struct PriceFeedView: View {
                 }
                 return false
             }
+
+            print("🔍 Search for '\(searchText)' returned \(filtered.count) results")
+            return filtered
         }
     }
 
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // Search bar
+                // Search bar - positioned at very top
                 HStack(spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
                             .font(.system(size: 14))
 
-                        TextField("Search", text: $searchText)
+                        TextField("Search by tag, username, or address", text: $searchText)
                             .textFieldStyle(.plain)
                             .autocorrectionDisabled()
                             .font(.system(size: 15))
@@ -115,7 +139,8 @@ struct PriceFeedView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.vertical, 8)
+                .background(Color(.systemBackground))
 
                 Divider()
 
@@ -129,25 +154,41 @@ struct PriceFeedView: View {
                             }
                         }
                     }
+                } else if filteredHomes.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: searchText.isEmpty ? "dollarsign.circle" : "magnifyingglass")
+                            .font(.system(size: 60))
+                            .foregroundColor(.gray)
+
+                        if searchText.isEmpty {
+                            Text("No homes yet")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
+
+                            Text("Be the first to post a property!")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 40)
+                        } else {
+                            Text("No results found")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
+
+                            Text("Try searching for a different property")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(filteredHomes) { home in
-                                HomePostView(home: home)
+                                HomePostView(home: home, searchText: $searchText)
                                     .padding(.bottom, 16)
-                            }
-
-                            if filteredHomes.isEmpty && !searchText.isEmpty {
-                                VStack(spacing: 12) {
-                                    Image(systemName: "magnifyingglass")
-                                        .font(.system(size: 40))
-                                        .foregroundColor(.gray.opacity(0.5))
-                                    Text("No results found")
-                                        .font(.headline)
-                                        .foregroundColor(.gray)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.top, 60)
                             }
                         }
                     }

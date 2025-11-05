@@ -663,18 +663,17 @@ struct CreatePostView: View {
 
                 // Call the optional scraping API for auto-import
                 // NOTE: This is optional - if unavailable, users can fill form manually
-                // For development: use localhost:3000 in simulator, or your Mac's IP for physical device
-                // For production: replace with your deployed API endpoint
-                let apiEndpoint = "http://10.2.224.251:3000/api/scrape-listing" // TODO: Replace with production URL
+                // To update IP: Open Config.swift and change developmentIP
+                let apiEndpoint = APIConfig.scrapingAPIEndpoint
 
                 guard let apiURL = URL(string: apiEndpoint) else {
-                    throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Import service misconfigured"])
+                    throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Quick import is taking a break - just add your listing below!"])
                 }
 
                 var request = URLRequest(url: apiURL)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.timeoutInterval = 15 // 15 second timeout - fail fast if service is down
+                request.timeoutInterval = 30 // 30 second timeout - allows time for photo fetching
 
                 let body = ["url": listingURL]
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -683,7 +682,7 @@ struct CreatePostView: View {
                 let (data, response) = try await URLSession.shared.data(for: request)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
-                    throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid response from server"])
+                    throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Quick import is busy - add your listing below!"])
                 }
 
                 print("📥 Received response with status code: \(httpResponse.statusCode)")
@@ -692,9 +691,9 @@ struct CreatePostView: View {
                     // Try to parse error message from response
                     if let errorResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let errorMsg = errorResponse["error"] as? String {
-                        throw NSError(domain: "ImportError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errorMsg])
+                        throw NSError(domain: "ImportError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "🤔 \(errorMsg) - just add your details below!"])
                     } else {
-                        throw NSError(domain: "ImportError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server returned error code \(httpResponse.statusCode)"])
+                        throw NSError(domain: "ImportError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "📈 Quick import is experiencing high demand - add your listing below!"])
                     }
                 }
 
@@ -785,7 +784,7 @@ struct CreatePostView: View {
                         }
                     }
                 } else {
-                    errorMessage = "⚠️ No data could be extracted from this URL"
+                    errorMessage = "🤔 Couldn't read that listing - no worries, just add your details below!"
                     print("⚠️ No data was extracted from the listing")
                 }
 
@@ -794,11 +793,11 @@ struct CreatePostView: View {
 
                 // Friendly error message - import is optional
                 if error.domain == NSURLErrorDomain && error.code == NSURLErrorCannotConnectToHost {
-                    errorMessage = "Import service unavailable - fill out form manually instead"
+                    errorMessage = "📈 We're growing fast! Quick import is taking a break - just fill out the form below"
                 } else if error.domain == NSURLErrorDomain && error.code == NSURLErrorTimedOut {
-                    errorMessage = "Import timed out - fill out form manually instead"
+                    errorMessage = "📈 High demand right now! Fill out the form below while our servers catch up"
                 } else {
-                    errorMessage = "Import failed - fill out form manually instead"
+                    errorMessage = "✨ Quick import is busy - no worries, just add your listing details below!"
                 }
 
                 print("ℹ️ User can continue posting manually")
@@ -816,6 +815,14 @@ struct CreatePostView: View {
     }
 
     func createPost() {
+        print("🚀 createPost() called")
+        print("   - Images: \(imageData.count) local, \(imageUrls.count) URLs")
+        print("   - Description: \(description.isEmpty ? "EMPTY" : "✓")")
+        print("   - Price: \(price.isEmpty ? "EMPTY" : price)")
+        print("   - Bedrooms: \(bedrooms.isEmpty ? "EMPTY" : bedrooms)")
+        print("   - Bathrooms: \(bathrooms.isEmpty ? "EMPTY" : bathrooms)")
+        print("   - Address: \(address.isEmpty ? "EMPTY" : address)")
+
         errorMessage = ""
         isUploading = true
 
@@ -872,6 +879,22 @@ struct CreatePostView: View {
                     generatedTitle = listingType.rawValue
                 }
 
+                // Generate hashtags
+                let priceDecimal: Decimal? = {
+                    guard !price.isEmpty, let priceDouble = Double(price) else { return nil }
+                    return Decimal(priceDouble)
+                }()
+
+                let generatedTags = TagGenerator.generateTags(
+                    city: city.isEmpty ? nil : city,
+                    price: priceDecimal,
+                    bedrooms: bedrooms.isEmpty ? nil : Int(bedrooms),
+                    title: generatedTitle,
+                    description: description.isEmpty ? nil : description,
+                    listingType: listingType == .rental ? "rental" : "sale"
+                )
+                print("🏷️ Generated tags: \(generatedTags)")
+
                 // Create home post
                 struct NewHome: Encodable {
                     let user_id: String
@@ -887,6 +910,7 @@ struct CreatePostView: View {
                     let state: String?
                     let zip_code: String?
                     let image_urls: [String]
+                    let tags: [String]
                     let is_active: Bool
                     let open_house_date: Date?
                     let open_house_end_date: Date?
@@ -908,6 +932,7 @@ struct CreatePostView: View {
                     state: state.isEmpty ? nil : state,
                     zip_code: zipCode.isEmpty ? nil : zipCode,
                     image_urls: finalImageUrls,
+                    tags: generatedTags,
                     is_active: true,
                     open_house_date: (enableOpenHouse && hasOpenHousePaid) ? openHouseDate : nil,
                     open_house_end_date: (enableOpenHouse && hasOpenHousePaid) ? openHouseEndDate : nil,
@@ -922,7 +947,19 @@ struct CreatePostView: View {
                     .execute()
                     .value
 
-                print("✅ Post created successfully!")
+                print("✅ Post created successfully! Response: \(response)")
+
+                // Notify FeedView to reload so the new post appears at the top
+                print("📢 Sending NewPostCreated notification...")
+                if let createdPost = response.first {
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("NewPostCreated"),
+                        object: nil,
+                        userInfo: ["postId": createdPost.id]
+                    )
+                } else {
+                    NotificationCenter.default.post(name: NSNotification.Name("NewPostCreated"), object: nil)
+                }
 
                 // Auto-post description as first comment if description exists
                 if let createdHome = response.first, !description.isEmpty {
@@ -953,11 +990,13 @@ struct CreatePostView: View {
                 }
 
                 isUploading = false
+                print("🎉 Post creation complete, dismissing sheet...")
                 dismiss()
 
             } catch {
                 isUploading = false
                 print("❌ Error creating post: \(error)")
+                print("❌ Error details: \(String(describing: error))")
                 errorMessage = error.localizedDescription
             }
         }

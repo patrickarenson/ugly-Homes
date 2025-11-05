@@ -38,6 +38,7 @@ struct Home: Codable, Identifiable {
     var stripePaymentId: String?
     var subscriptionId: String?
     var expiresAt: Date?
+    var tags: [String]?
     let createdAt: Date
     let updatedAt: Date
 
@@ -75,6 +76,7 @@ struct Home: Codable, Identifiable {
         case stripePaymentId = "stripe_payment_id"
         case subscriptionId = "subscription_id"
         case expiresAt = "expires_at"
+        case tags
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case profile

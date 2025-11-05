@@ -14,13 +14,13 @@ struct ShareSheet: View {
     @State private var showCopiedMessage = false
 
     var shareURL: String {
-        // TODO: Replace with actual deep link when app is published
-        return "https://uglyhomes.app/home/\(home.id.uuidString)"
+        // Use custom URL scheme for direct app opening
+        return "housers://home/\(home.id.uuidString)"
     }
 
     var shareText: String {
         """
-        Check out this home on Ugly Homes!
+        Check out this home on Housers!
 
         \(home.title)
         \(home.price != nil ? formatPrice(home.price!) : "")
@@ -233,7 +233,7 @@ struct ShareSheet: View {
         guard let image = home.imageUrls.first,
               let imageURL = URL(string: image),
               let imageData = try? Data(contentsOf: imageURL),
-              let instagramURL = URL(string: "instagram-stories://share?source_application=com.uglyhomes.app") else {
+              let instagramURL = URL(string: "instagram-stories://share?source_application=com.housers.app") else {
             // Fallback to Instagram app or App Store
             if let instagramAppURL = URL(string: "instagram://app") {
                 UIApplication.shared.open(instagramAppURL)
@@ -305,17 +305,60 @@ struct ShareSheet: View {
     func shareViaMessages() {
         trackShare()
 
-        let urlString = "sms:&body=\(shareText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
-        if let url = URL(string: urlString) {
-            UIApplication.shared.open(url)
-            dismiss()
+        // Load the image to share along with text
+        Task {
+            var itemsToShare: [Any] = [shareText, shareURL]
+
+            // Download and add image if available
+            if let imageUrl = home.imageUrls.first,
+               let url = URL(string: imageUrl),
+               let imageData = try? Data(contentsOf: url),
+               let image = UIImage(data: imageData) {
+                itemsToShare.insert(image, at: 0) // Add image first
+            }
+
+            await MainActor.run {
+                let activityVC = UIActivityViewController(
+                    activityItems: itemsToShare,
+                    applicationActivities: nil
+                )
+
+                // Restrict to Messages only
+                activityVC.excludedActivityTypes = [
+                    .postToFacebook,
+                    .postToTwitter,
+                    .postToWeibo,
+                    .postToVimeo,
+                    .postToFlickr,
+                    .postToTencentWeibo,
+                    .assignToContact,
+                    .saveToCameraRoll,
+                    .addToReadingList,
+                    .airDrop,
+                    .mail,
+                    .copyToPasteboard,
+                    .print
+                ]
+
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let rootVC = windowScene.windows.first?.rootViewController {
+                    var topController = rootVC
+                    while let presented = topController.presentedViewController {
+                        topController = presented
+                    }
+                    topController.present(activityVC, animated: true)
+                }
+
+                dismiss()
+            }
         }
     }
 
     func shareViaWhatsApp() {
         trackShare()
 
-        let encodedText = shareText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let messageText = "\(shareText)\n\n\(shareURL)"
+        let encodedText = messageText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let whatsappURL = "whatsapp://send?text=\(encodedText)"
 
         if let url = URL(string: whatsappURL), UIApplication.shared.canOpenURL(url) {
@@ -367,22 +410,37 @@ struct ShareSheet: View {
     func showSystemShareSheet() {
         trackShare()
 
-        let activityVC = UIActivityViewController(
-            activityItems: [shareText, shareURL],
-            applicationActivities: nil
-        )
+        // Load the image to share along with text
+        Task {
+            var itemsToShare: [Any] = [shareText, shareURL]
 
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = windowScene.windows.first?.rootViewController {
-            // Find the top-most view controller
-            var topController = rootVC
-            while let presented = topController.presentedViewController {
-                topController = presented
+            // Download and add image if available
+            if let imageUrl = home.imageUrls.first,
+               let url = URL(string: imageUrl),
+               let imageData = try? Data(contentsOf: url),
+               let image = UIImage(data: imageData) {
+                itemsToShare.insert(image, at: 0) // Add image first
             }
-            topController.present(activityVC, animated: true)
-        }
 
-        dismiss()
+            await MainActor.run {
+                let activityVC = UIActivityViewController(
+                    activityItems: itemsToShare,
+                    applicationActivities: nil
+                )
+
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let rootVC = windowScene.windows.first?.rootViewController {
+                    // Find the top-most view controller
+                    var topController = rootVC
+                    while let presented = topController.presentedViewController {
+                        topController = presented
+                    }
+                    topController.present(activityVC, animated: true)
+                }
+
+                dismiss()
+            }
+        }
     }
 
     func trackShare() {

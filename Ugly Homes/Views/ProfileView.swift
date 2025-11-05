@@ -20,6 +20,7 @@ struct ProfileView: View {
     @State private var currentUserId: UUID?
     @State private var showChat = false
     @State private var searchText = "" // For tag filtering
+    @State private var isLoadingPost = false
 
     init(viewingUserId: UUID? = nil) {
         self.viewingUserId = viewingUserId
@@ -69,9 +70,15 @@ struct ProfileView: View {
                                 )
                         }
 
-                        Text("@\(profile.username)")
-                            .font(.system(size: 18))
-                            .fontWeight(.semibold)
+                        HStack(spacing: 6) {
+                            Text("@\(profile.username)")
+                                .font(.system(size: 18))
+                                .fontWeight(.semibold)
+
+                            if profile.isVerified == true {
+                                VerifiedBadge()
+                            }
+                        }
 
                         if let market = profile.market, !market.isEmpty {
                             HStack(spacing: 4) {
@@ -183,14 +190,25 @@ struct ProfileView: View {
                             ForEach(userHomes) { home in
                                 if let imageUrl = home.imageUrls.first {
                                     ZStack(alignment: .topTrailing) {
-                                        AsyncImage(url: URL(string: imageUrl)) { image in
-                                            image
-                                                .resizable()
-                                                .aspectRatio(1, contentMode: .fill)
-                                        } placeholder: {
-                                            Rectangle()
-                                                .fill(Color.gray.opacity(0.2))
-                                                .aspectRatio(1, contentMode: .fill)
+                                        AsyncImage(url: URL(string: imageUrl)) { phase in
+                                            switch phase {
+                                            case .empty:
+                                                Rectangle()
+                                                    .fill(Color.gray.opacity(0.2))
+                                                    .aspectRatio(1, contentMode: .fill)
+                                            case .success(let image):
+                                                image
+                                                    .resizable()
+                                                    .aspectRatio(1, contentMode: .fill)
+                                            case .failure:
+                                                Rectangle()
+                                                    .fill(Color.gray.opacity(0.2))
+                                                    .aspectRatio(1, contentMode: .fill)
+                                            @unknown default:
+                                                Rectangle()
+                                                    .fill(Color.gray.opacity(0.2))
+                                                    .aspectRatio(1, contentMode: .fill)
+                                            }
                                         }
                                         .clipped()
 
@@ -228,8 +246,16 @@ struct ProfileView: View {
                                         .padding(4)
                                     }
                                     .onTapGesture {
+                                        print("🔵 Post tapped: \(home.title)")
+                                        print("🔵 Home has profile: \(home.profile != nil)")
+                                        isLoadingPost = true
                                         selectedHome = home
-                                        showPostDetail = true
+
+                                        // Small delay to ensure state updates
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                            showPostDetail = true
+                                            isLoadingPost = false
+                                        }
                                     }
                                 }
                             }
@@ -248,6 +274,20 @@ struct ProfileView: View {
                 }
             }
         }
+        .overlay(
+            // Loading indicator when opening post
+            Group {
+                if isLoadingPost {
+                    ZStack {
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(1.5)
+                    }
+                }
+            }
+        )
         .navigationTitle(isViewingOtherProfile ? (profile?.username ?? "Profile") : "Profile")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -287,21 +327,54 @@ struct ProfileView: View {
         .sheet(isPresented: $showAccountSettings) {
             AccountSettingsView()
         }
-        .sheet(isPresented: $showPostDetail) {
+        .fullScreenCover(isPresented: $showPostDetail) {
             if let home = selectedHome {
-                NavigationView {
+                let _ = print("🟢 fullScreenCover presenting for: \(home.title)")
+                ZStack(alignment: .topTrailing) {
+                    // Main content - no NavigationView to reduce whitespace
                     ScrollView {
                         HomePostView(home: home, searchText: $searchText, showSoldOptions: !isViewingOtherProfile, preloadedUserId: currentUserId)
                     }
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarLeading) {
-                            Button("Close") {
-                                showPostDetail = false
-                            }
+                    .ignoresSafeArea(.all)
+                    .onChange(of: searchText) { oldValue, newValue in
+                        // If user taps a tag, close popup and navigate to feed with search
+                        if !newValue.isEmpty && oldValue.isEmpty {
+                            print("🏷️ Tag tapped: \(newValue), navigating to feed")
+                            showPostDetail = false
+                            // Post notification to switch to feed tab and search
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("SearchByTag"),
+                                object: nil,
+                                userInfo: ["tag": newValue]
+                            )
+                            // Clear searchText so it can be used again
+                            searchText = ""
                         }
                     }
+
+                    // Close button overlay - RIGHT SIDE
+                    Button(action: {
+                        print("🔴 Close tapped")
+                        showPostDetail = false
+                    }) {
+                        HStack {
+                            Text("Close")
+                                .font(.system(size: 16))
+                            Image(systemName: "xmark")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.black.opacity(0.6))
+                        .cornerRadius(20)
+                    }
+                    .padding(.top, 8)
+                    .padding(.trailing, 16)
                 }
+            } else {
+                let _ = print("❌ fullScreenCover: selectedHome is nil!")
+                Text("Error loading post")
             }
         }
         .sheet(isPresented: $showChat) {
@@ -354,11 +427,15 @@ struct ProfileView: View {
                     .execute()
                     .value
 
-                if let userProfile = profileResponse.first {
-                    profile = userProfile
+                // Update UI immediately with profile data
+                await MainActor.run {
+                    if let userProfile = profileResponse.first {
+                        profile = userProfile
+                    }
+                    isLoading = false // Show UI immediately, posts will load below
                 }
 
-                // Load user's homes
+                // Load user's homes in background (need to include profile for HomePostView)
                 let homesResponse: [Home] = try await SupabaseManager.shared.client
                     .from("homes")
                     .select("*, profile:user_id(*)")
@@ -367,13 +444,15 @@ struct ProfileView: View {
                     .execute()
                     .value
 
-                userHomes = homesResponse
-                print("✅ Loaded profile with \(userHomes.count) posts")
-
-                isLoading = false
+                await MainActor.run {
+                    userHomes = homesResponse
+                    print("✅ Loaded profile with \(userHomes.count) posts")
+                }
             } catch {
                 print("❌ Error loading profile: \(error)")
-                isLoading = false
+                await MainActor.run {
+                    isLoading = false
+                }
             }
         }
     }
@@ -381,6 +460,13 @@ struct ProfileView: View {
     func signOut() {
         Task {
             try? await SupabaseManager.shared.client.auth.signOut()
+
+            // Clear saved credentials
+            UserDefaults.standard.removeObject(forKey: "savedEmail")
+            UserDefaults.standard.removeObject(forKey: "savedPassword")
+            UserDefaults.standard.set(false, forKey: "rememberMe")
+            print("🗑️ Cleared saved credentials on sign out")
+
             NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
         }
     }

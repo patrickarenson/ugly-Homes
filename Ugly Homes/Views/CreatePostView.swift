@@ -100,12 +100,12 @@ struct CreatePostView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Quick Import")
                                 .font(.system(size: 15, weight: .medium))
-                            Text("Paste a Zillow or Redfin URL")
+                            Text("Paste a Zillow URL")
                                 .font(.caption)
                                 .foregroundColor(.gray)
 
                             HStack {
-                                TextField("Paste listing URL here", text: $listingURL)
+                                TextField("Paste Zillow URL here", text: $listingURL)
                                     .padding()
                                     .background(Color(.systemGray6))
                                     .cornerRadius(8)
@@ -505,7 +505,7 @@ struct CreatePostView: View {
                             Spacer()
                             // Only show price for new posts
                             if editingHome == nil {
-                                Text("$5")
+                                Text("$5.99")
                                     .font(.headline)
                                     .foregroundColor(.orange)
                             }
@@ -549,7 +549,7 @@ struct CreatePostView: View {
                                                     .fontWeight(.semibold)
                                             } else {
                                                 Image(systemName: "creditcard.fill")
-                                                Text("Pay $5 via Apple Pay")
+                                                Text("Pay $5.99 via Apple Pay")
                                                     .fontWeight(.semibold)
                                             }
                                         }
@@ -885,7 +885,7 @@ struct CreatePostView: View {
                     return Decimal(priceDouble)
                 }()
 
-                let generatedTags = TagGenerator.generateTags(
+                var generatedTags = TagGenerator.generateTags(
                     city: city.isEmpty ? nil : city,
                     price: priceDecimal,
                     bedrooms: bedrooms.isEmpty ? nil : Int(bedrooms),
@@ -893,6 +893,12 @@ struct CreatePostView: View {
                     description: description.isEmpty ? nil : description,
                     listingType: listingType == .rental ? "rental" : "sale"
                 )
+
+                // Add invisible #OpenHouse tag for searchability
+                if enableOpenHouse && hasOpenHousePaid {
+                    generatedTags.append("#OpenHouse")
+                }
+
                 print("🏷️ Generated tags: \(generatedTags)")
 
                 // Create home post
@@ -1191,6 +1197,7 @@ struct CreatePostView: View {
                 for savedUser in savedByUsers {
                     struct NewNotification: Encodable {
                         let user_id: String
+                        let triggered_by_user_id: String
                         let type: String
                         let title: String
                         let message: String
@@ -1200,6 +1207,7 @@ struct CreatePostView: View {
                     let address = home.address ?? "a property"
                     let notification = NewNotification(
                         user_id: savedUser.userId.uuidString,
+                        triggered_by_user_id: userId.uuidString,
                         type: "open_house_cancelled",
                         title: "Open House Cancelled",
                         message: "The open house at \(address) has been cancelled by the owner.",

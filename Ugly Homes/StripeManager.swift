@@ -2,7 +2,7 @@
 //  StripeManager.swift
 //  Ugly Homes
 //
-//  Stripe Payment Integration for Open House Feature ($5)
+//  Stripe Payment Integration for Open House Feature ($5.99)
 //
 
 import Foundation
@@ -24,7 +24,7 @@ class StripeManager: ObservableObject {
     }
 
     // Payment configuration
-    private let openHousePrice: Int = 500 // $5.00 in cents
+    private let openHousePrice: Int = 599 // $5.99 in cents
 
     private init() {
         // Configure Stripe with the appropriate key
@@ -32,7 +32,7 @@ class StripeManager: ObservableObject {
         print("🔑 Stripe configured in \(useTestMode ? "TEST" : "LIVE") mode")
     }
 
-    /// Create a payment intent for Open House feature ($5)
+    /// Create a payment intent for Open House feature ($5.99)
     func createPaymentIntent(userId: String, homeId: String) async throws -> String {
         // Call Supabase Edge Function to create payment intent
         let url = URL(string: "https://pgezrygzubjieqfzyccy.supabase.co/functions/v1/create-payment-intent")!
@@ -50,9 +50,9 @@ class StripeManager: ObservableObject {
             "currency": "usd",
             "userId": userId,
             "homeId": homeId,
-            "description": "Ugly Homes - Open House Feature",
+            "description": "Housers - Open House Feature",
             "metadata": [
-                "app": "uglyhomes",
+                "app": "housers",
                 "feature": "open_house",
                 "user_id": userId,
                 "home_id": homeId

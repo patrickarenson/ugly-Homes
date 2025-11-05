@@ -335,12 +335,18 @@ struct LocationFeedView: View {
                 let response: [Home] = try await query
                     .order("state", ascending: true)
                     .order("city", ascending: true)
+                    .limit(50)  // Increased limit since we'll filter out sold/leased
                     .execute()
                     .value
 
-                print("✅ Loaded \(response.count) homes")
-                homes = response
-                allHomes = response
+                // Filter out sold and leased properties from map view
+                let activeListings = response.filter { home in
+                    home.soldStatus == nil || (home.soldStatus != "sold" && home.soldStatus != "leased")
+                }
+
+                print("✅ Loaded \(response.count) homes, showing \(activeListings.count) active listings (filtered out sold/leased)")
+                homes = activeListings
+                allHomes = activeListings
                 isLoading = false
             } catch {
                 print("❌ Error loading homes: \(error)")

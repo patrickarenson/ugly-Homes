@@ -10,6 +10,7 @@ import Foundation
 struct AppNotification: Codable, Identifiable {
     let id: UUID
     let userId: UUID
+    let triggeredByUserId: UUID?
     let type: String
     let title: String
     let message: String
@@ -20,6 +21,7 @@ struct AppNotification: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id
         case userId = "user_id"
+        case triggeredByUserId = "triggered_by_user_id"
         case type
         case title
         case message

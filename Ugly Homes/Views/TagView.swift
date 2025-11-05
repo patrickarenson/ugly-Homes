@@ -18,6 +18,7 @@ struct TagView: View {
 
     var body: some View {
         Button(action: {
+            print("🏷️ TagView button tapped: \(tag)")
             onTap?()
         }) {
             Text(tag)
@@ -29,7 +30,8 @@ struct TagView: View {
                 .background(Color.blue.opacity(0.1))
                 .cornerRadius(12)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PlainButtonStyle())
+        .contentShape(Rectangle()) // Make entire area tappable
     }
 }
 
@@ -47,7 +49,9 @@ struct TagListView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(Array(tags.prefix(maxTags)), id: \.self) { tag in
+            // Filter out invisible tags like #OpenHouse (used only for search)
+            let visibleTags = tags.filter { $0 != "#OpenHouse" }
+            ForEach(Array(visibleTags.prefix(maxTags)), id: \.self) { tag in
                 TagView(tag: tag) {
                     onTagTap?(tag)
                 }

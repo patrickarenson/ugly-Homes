@@ -152,7 +152,7 @@ struct ForgotPasswordView: View {
                 // Send password reset email via Supabase with redirect URL
                 try await SupabaseManager.shared.client.auth.resetPasswordForEmail(
                     email,
-                    redirectTo: URL(string: "uglyhomes://reset-password")
+                    redirectTo: URL(string: "housers://reset-password")
                 )
 
                 print("✅ Password reset email sent to: \(email)")

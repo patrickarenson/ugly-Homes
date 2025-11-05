@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var isLoading = true
     @State private var showResetPassword = false
     @State private var showResetSuccess = false
+    @EnvironmentObject var deepLinkManager: DeepLinkManager
 
     var body: some View {
         Group {
@@ -78,6 +79,11 @@ struct ContentView: View {
                     print("❌ Error handling auth URL: \(error)")
                 }
             }
+        }
+        // Check if it's a post deep link (e.g., housers.app/home/{id})
+        else if url.path.contains("/home/") {
+            print("🏠 Post deep link detected")
+            deepLinkManager.handleURL(url)
         }
     }
 }

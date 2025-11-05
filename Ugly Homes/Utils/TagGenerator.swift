@@ -60,8 +60,33 @@ struct TagGenerator {
             }
         }
 
-        // 3. Buyer Persona Tags (PRIORITY - come right after city/price)
         let text = "\(title) \(description ?? "")".lowercased()
+
+        // 3. Waterfront (CRITICAL - major selling feature, comes before buyer personas)
+        if text.contains("waterfront") ||
+           text.contains("water front") ||
+           text.contains("lakefront") ||
+           text.contains("lake front") ||
+           text.contains("oceanfront") ||
+           text.contains("ocean front") ||
+           text.contains("riverfront") ||
+           text.contains("river front") ||
+           text.contains("beachfront") ||
+           text.contains("beach front") ||
+           text.contains("dock") ||
+           text.contains("private dock") ||
+           text.contains("boat dock") ||
+           text.contains("on the intercoastal") ||
+           text.contains("on the intracoastal") ||
+           text.contains("intercoastal") ||
+           text.contains("intracoastal") ||
+           text.contains("boat lift") ||
+           text.contains("boat access") ||
+           text.contains("deep water") {
+            tags.append("#Waterfront")
+        }
+
+        // 4. Buyer Persona Tags (come after waterfront)
 
         // Flippers (fix & flip investors)
         if text.contains("fix and flip") ||
@@ -88,7 +113,6 @@ struct TagGenerator {
            text.contains("cash flow") ||
            text.contains("high cap rate") ||
            text.contains("cap rate") ||
-           text.contains("duplex") ||
            text.contains("multifamily") ||
            text.contains("multi-family") ||
            text.contains("two-unit") ||
@@ -121,17 +145,17 @@ struct TagGenerator {
             tags.append("#Vacation")
         }
 
-        // Family Buyers (family-friendly homes with space)
+        // Forever Home Buyers (upgraded family homes with space for growing families)
         // Exclude luxury price range ($2M+) - those are estates, not family homes
-        let isFamilyPriceRange: Bool = {
+        let isForeverHomePriceRange: Bool = {
             if let price = price {
                 let priceInt = Int(truncating: price as NSNumber)
                 return priceInt < 2_000_000
             }
-            return true // If no price, allow FamilyHome
+            return true // If no price, allow ForeverHome
         }()
 
-        if isFamilyPriceRange && (
+        if isForeverHomePriceRange && (
            text.contains("spacious") ||
            text.contains("family-friendly") ||
            text.contains("family friendly") ||
@@ -148,7 +172,7 @@ struct TagGenerator {
            text.contains("walk-in closet") ||
            text.contains("walk in closet") ||
            text.contains("basement")) {
-            tags.append("#FamilyHome")
+            tags.append("#ForeverHome")
         }
 
         // Lifestyle Buyers (active/outdoor lifestyle)
@@ -234,10 +258,10 @@ struct TagGenerator {
         }
 
         // Luxury Properties (buyer persona - consolidate all variations)
-        // Also detect by price: $5M+ is automatically luxury
+        // Also detect by price: $10M+ is automatically luxury
         let isLuxuryPrice: Bool = {
             if let price = price {
-                return Int(truncating: price as NSNumber) >= 5_000_000
+                return Int(truncating: price as NSNumber) >= 10_000_000
             }
             return false
         }()
@@ -316,39 +340,112 @@ struct TagGenerator {
            text.contains("natural light") ||
            text.contains("high-end appliances") ||
            text.contains("high end appliances") ||
+           text.contains("professional-grade appliances") ||
+           text.contains("professional grade appliances") ||
            text.contains("quartz countertops") ||
+           text.contains("quartzite") ||
            text.contains("minimalist") ||
            text.contains("contemporary") ||
            text.contains("modern design") ||
+           text.contains("modern luxury") ||
+           text.contains("expression of modern") ||
+           text.contains("infinity-edge") ||
+           text.contains("infinity edge") ||
            text.contains("lock-and-leave") ||
            text.contains("lock and leave") ||
            text.contains("turn-key") ||
            text.contains("turnkey") ||
            text.contains("builder warranty") ||
            text.contains("under construction") ||
-           text.contains("spec home") {
+           text.contains("spec home") ||
+           text.contains("lutron") ||
+           text.contains("sonos") {
             tags.append("#NewConstruction")
         }
 
-        // 4. Feature Tags (supplementary features)
+        // Escape The City (rural/farm properties for city escapees)
+        if text.contains("farmhouse") ||
+           text.contains("ranch-style") ||
+           text.contains("ranch style") ||
+           text.contains("rustic charm") ||
+           text.contains("updated farmhouse") ||
+           text.contains("modern country home") ||
+           text.contains("wraparound porch") ||
+           text.contains("classic country kitchen") ||
+           text.contains("country kitchen") ||
+           text.contains("private retreat") ||
+           text.contains("secluded") ||
+           text.contains("tranquil setting") ||
+           text.contains("peaceful countryside") ||
+           text.contains("country living") ||
+           text.contains("mountain views") ||
+           text.contains("creek") ||
+           text.contains("pond") && text.contains("property") ||
+           text.contains("lake on property") ||
+           text.contains("homestead-ready") ||
+           text.contains("homestead ready") ||
+           text.contains("self-sufficient living") ||
+           text.contains("self sufficient living") ||
+           text.contains("off-grid potential") ||
+           text.contains("off grid potential") ||
+           text.contains("off-grid") ||
+           text.contains("off grid") ||
+           text.contains("solar panels") ||
+           text.contains("well") && text.contains("septic") ||
+           text.contains("fresh air") ||
+           text.contains("escape the city") ||
+           text.contains("rural charm") ||
+           text.contains("acreage") ||
+           text.contains("acre lot") ||
+           text.contains("acres") ||
+           text.contains("sprawling property") ||
+           text.contains("open land") ||
+           text.contains("rolling hills") ||
+           text.contains("wide open views") ||
+           text.contains("room for horses") ||
+           text.contains("equestrian property") ||
+           text.contains("equestrian") ||
+           text.contains("barn included") ||
+           text.contains("barn") ||
+           text.contains("pasture") ||
+           text.contains("fenced acreage") ||
+           text.contains("garden space") ||
+           text.contains("workshop") ||
+           text.contains("rv parking") ||
+           text.contains("detached garage") {
+            tags.append("#EscapeTheCity")
+        }
+
+        // Historic Homes (buyers seeking historic properties with character)
+        // Note: Only tag as historic if it's an ACTUAL historic building, not modern with historic-inspired style
+        if text.contains("historic home") ||
+           text.contains("historic district") ||
+           text.contains("registered historic") ||
+           text.contains("historic property") ||
+           text.contains("built in 18") ||
+           text.contains("built in 19") ||
+           text.contains("turn-of-the-century home") ||
+           text.contains("turn of the century home") ||
+           text.contains("circa 18") ||
+           text.contains("circa 19") ||
+           text.contains("preserved architecture") ||
+           text.contains("period details") ||
+           text.contains("original character") ||
+           text.contains("original hardwood") ||
+           text.contains("original molding") ||
+           text.contains("original windows") ||
+           text.contains("original trim") ||
+           text.contains("historic charm") ||
+           text.contains("historic features") ||
+           text.contains("restored historic") {
+            tags.append("#Historic")
+        }
+
+        // 5. Feature Tags (supplementary features)
 
         // Pool (try to detect private pools, not community pools)
         if text.contains("pool") && !text.contains("community pool") {
             tags.append("#Pool")
-        }
-
-        // Waterfront (major selling feature)
-        if text.contains("waterfront") ||
-           text.contains("water front") ||
-           text.contains("lakefront") ||
-           text.contains("lake front") ||
-           text.contains("oceanfront") ||
-           text.contains("ocean front") ||
-           text.contains("riverfront") ||
-           text.contains("river front") ||
-           text.contains("beachfront") ||
-           text.contains("beach front") {
-            tags.append("#Waterfront")
         }
 
         // Fixer Upper / Needs Work (shared investor tag)
@@ -362,7 +459,8 @@ struct TagGenerator {
            text.contains("handyman") ||
            text.contains("cosmetic update") ||
            text.contains("bring your tools") ||
-           text.contains("sweat equity") {
+           text.contains("sweat equity") ||
+           text.contains("vintage") {
             tags.append("#FixerUpper")
         }
 
@@ -408,7 +506,7 @@ struct TagGenerator {
             tags.append("#Renovation")
         }
 
-        // 5. Size tags (based on bedrooms)
+        // 6. Size tags (based on bedrooms)
         if let bedrooms = bedrooms {
             if bedrooms >= 4 {
                 tags.append("#LargeProperty")

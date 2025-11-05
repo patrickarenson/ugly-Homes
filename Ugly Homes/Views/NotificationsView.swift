@@ -10,6 +10,8 @@ import SwiftUI
 struct NotificationsView: View {
     @State private var notifications: [AppNotification] = []
     @State private var isLoading = false
+    @State private var selectedUserId: UUID? = nil
+    @State private var showUserProfile = false
 
     var body: some View {
         NavigationView {
@@ -29,7 +31,17 @@ struct NotificationsView: View {
                     List {
                         ForEach(notifications) { notification in
                             NotificationRow(notification: notification, onTap: {
+                                print("🔵 Notification tapped: \(notification.title)")
+                                print("🔵 Triggered by user ID: \(notification.triggeredByUserId?.uuidString ?? "nil")")
                                 markAsRead(notification)
+                                // Navigate to user profile if available
+                                if let triggeredBy = notification.triggeredByUserId {
+                                    selectedUserId = triggeredBy
+                                    showUserProfile = true
+                                    print("🔵 Navigating to profile: \(triggeredBy)")
+                                } else {
+                                    print("❌ No triggeredByUserId found for this notification")
+                                }
                             })
                         }
                     }
@@ -54,6 +66,21 @@ struct NotificationsView: View {
             .refreshable {
                 loadNotifications()
             }
+            .sheet(isPresented: $showUserProfile) {
+                if let userId = selectedUserId {
+                    NavigationView {
+                        ProfileView(viewingUserId: userId)
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbar {
+                                ToolbarItem(placement: .navigationBarLeading) {
+                                    Button("Close") {
+                                        showUserProfile = false
+                                    }
+                                }
+                            }
+                    }
+                }
+            }
         }
     }
 
@@ -64,15 +91,20 @@ struct NotificationsView: View {
             do {
                 print("📥 Loading notifications...")
 
+                // Get current user ID
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                // Load only THIS user's notifications
                 let response: [AppNotification] = try await SupabaseManager.shared.client
                     .from("notifications")
                     .select()
+                    .eq("user_id", value: userId.uuidString)
                     .order("created_at", ascending: false)
                     .limit(50)
                     .execute()
                     .value
 
-                print("✅ Loaded \(response.count) notifications")
+                print("✅ Loaded \(response.count) notifications for user \(userId)")
                 notifications = response
                 isLoading = false
             } catch {
@@ -87,28 +119,37 @@ struct NotificationsView: View {
 
         Task {
             do {
+                print("🔄 Marking notification \(notification.id) as read")
+
                 try await SupabaseManager.shared.client
                     .from("notifications")
                     .update(["is_read": true])
                     .eq("id", value: notification.id.uuidString)
                     .execute()
 
+                print("✅ Database updated for notification \(notification.id)")
+
                 // Update local state
-                if let index = notifications.firstIndex(where: { $0.id == notification.id }) {
-                    notifications[index] = AppNotification(
-                        id: notification.id,
-                        userId: notification.userId,
-                        type: notification.type,
-                        title: notification.title,
-                        message: notification.message,
-                        homeId: notification.homeId,
-                        isRead: true,
-                        createdAt: notification.createdAt
-                    )
+                await MainActor.run {
+                    if let index = notifications.firstIndex(where: { $0.id == notification.id }) {
+                        notifications[index] = AppNotification(
+                            id: notification.id,
+                            userId: notification.userId,
+                            triggeredByUserId: notification.triggeredByUserId,
+                            type: notification.type,
+                            title: notification.title,
+                            message: notification.message,
+                            homeId: notification.homeId,
+                            isRead: true,
+                            createdAt: notification.createdAt
+                        )
+                    }
+
+                    // Trigger badge refresh
+                    Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshNotifications"), object: nil)
                 }
 
-                // Trigger badge refresh
-                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshNotifications"), object: nil)
+                print("✅ Local state updated for notification \(notification.id)")
             } catch {
                 print("❌ Error marking notification as read: \(error)")
             }
@@ -120,6 +161,8 @@ struct NotificationsView: View {
             do {
                 let userId = try await SupabaseManager.shared.client.auth.session.user.id
 
+                print("🔄 Marking all notifications as read for user: \(userId)")
+
                 try await SupabaseManager.shared.client
                     .from("notifications")
                     .update(["is_read": true])
@@ -127,10 +170,33 @@ struct NotificationsView: View {
                     .eq("is_read", value: false)
                     .execute()
 
-                loadNotifications()
+                print("✅ Database updated - all notifications marked as read")
+
+                // Update local state immediately
+                await MainActor.run {
+                    for index in notifications.indices {
+                        notifications[index] = AppNotification(
+                            id: notifications[index].id,
+                            userId: notifications[index].userId,
+                            triggeredByUserId: notifications[index].triggeredByUserId,
+                            type: notifications[index].type,
+                            title: notifications[index].title,
+                            message: notifications[index].message,
+                            homeId: notifications[index].homeId,
+                            isRead: true,
+                            createdAt: notifications[index].createdAt
+                        )
+                    }
+                }
+
+                print("✅ Local state updated")
 
                 // Trigger badge refresh
-                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshNotifications"), object: nil)
+                await MainActor.run {
+                    Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshNotifications"), object: nil)
+                }
+
+                print("✅ Badge refresh notification sent")
             } catch {
                 print("❌ Error marking all as read: \(error)")
             }

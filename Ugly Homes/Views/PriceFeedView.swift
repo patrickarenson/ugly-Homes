@@ -107,25 +107,23 @@ struct PriceFeedView: View {
                     .cornerRadius(12)
 
                     Menu {
-                        Picker("Filter", selection: $listingFilter) {
-                            ForEach(ListingFilter.allCases, id: \.self) { filter in
-                                Text(filter.rawValue).tag(filter)
+                        Section(header: Text("Filter by Type")) {
+                            Picker("Filter", selection: $listingFilter) {
+                                ForEach(ListingFilter.allCases, id: \.self) { filter in
+                                    Text(filter.rawValue).tag(filter)
+                                }
                             }
                         }
-                    } label: {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                            .font(.system(size: 24))
-                            .foregroundColor(.primary)
-                    }
 
-                    Menu {
-                        Picker("Sort", selection: $sortOrder) {
-                            ForEach(PriceSortOrder.allCases, id: \.self) { order in
-                                Text(order.rawValue).tag(order)
+                        Section(header: Text("Sort by Price")) {
+                            Picker("Sort", selection: $sortOrder) {
+                                ForEach(PriceSortOrder.allCases, id: \.self) { order in
+                                    Text(order.rawValue).tag(order)
+                                }
                             }
                         }
                     } label: {
-                        Image(systemName: "arrow.up.arrow.down")
+                        Image(systemName: "slider.horizontal.3")
                             .font(.system(size: 24))
                             .foregroundColor(.primary)
                     }
@@ -248,10 +246,11 @@ struct PriceFeedView: View {
 
                 let response: [Home] = try await query
                     .order("price", ascending: sortOrder == .lowToHigh)
+                    .limit(30)  // Limit initial load for faster performance
                     .execute()
                     .value
 
-                print("✅ Loaded \(response.count) homes with prices")
+                print("✅ Loaded \(response.count) homes with prices (limited for performance)")
                 homes = response
                 allHomes = response
                 isLoading = false

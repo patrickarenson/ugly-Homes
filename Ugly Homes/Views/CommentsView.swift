@@ -298,6 +298,7 @@ struct CommentsView: View {
 
                     struct NewNotification: Encodable {
                         let user_id: String
+                        let triggered_by_user_id: String
                         let type: String
                         let title: String
                         let message: String
@@ -307,6 +308,7 @@ struct CommentsView: View {
                     let username = currentUsername?.username ?? "Someone"
                     let notification = NewNotification(
                         user_id: home.userId.uuidString,
+                        triggered_by_user_id: userId.uuidString,
                         type: "comment",
                         title: "New Comment",
                         message: "\(username) commented on your post",
@@ -458,10 +460,16 @@ struct CommentRow: View {
                             ProfileView(viewingUserId: profile.id)
                         }
                     }) {
-                        Text("\(comment.profile?.username ?? "user")")
-                            .fontWeight(.semibold)
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
+                        HStack(spacing: 4) {
+                            Text("\(comment.profile?.username ?? "user")")
+                                .fontWeight(.semibold)
+                                .font(.subheadline)
+                                .foregroundColor(.primary)
+
+                            if comment.profile?.isVerified == true {
+                                VerifiedBadge()
+                            }
+                        }
                     }
 
                     Text(timeAgo(from: comment.createdAt))

@@ -19,6 +19,9 @@ struct ChatView: View {
     @State private var currentUserId: UUID?
     @State private var isLoading = false
     @State private var isSending = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var pollingTask: Task<Void, Never>?
 
     init(otherUserId: UUID, otherUsername: String, otherAvatarUrl: String?) {
         self.otherUserId = otherUserId
@@ -119,6 +122,14 @@ struct ChatView: View {
             .onAppear {
                 loadChat()
             }
+            .onDisappear {
+                pollingTask?.cancel()
+            }
+            .alert("Message Error", isPresented: $showError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
+            }
     }
 
     func loadChat() {
@@ -160,6 +171,9 @@ struct ChatView: View {
                 // Mark messages as read
                 try await markMessagesAsRead()
 
+                // Start polling for new messages
+                startPollingForMessages()
+
                 await MainActor.run {
                     isLoading = false
                 }
@@ -187,7 +201,10 @@ struct ChatView: View {
             .value
 
         print("✅ Loaded \(response.count) messages")
-        messages = response
+
+        await MainActor.run {
+            messages = response
+        }
     }
 
     func markMessagesAsRead() async throws {
@@ -247,18 +264,25 @@ struct ChatView: View {
                     content: messageText
                 )
 
-                try await SupabaseManager.shared.client
+                let response: [Message] = try await SupabaseManager.shared.client
                     .from("messages")
                     .insert(newMsg)
+                    .select()
                     .execute()
+                    .value
 
-                print("✅ Message sent successfully!")
+                print("✅ Message sent successfully! Inserted message ID: \(response.first?.id.uuidString ?? "unknown")")
 
-                // Reload messages to get the new one
-                try await loadMessages()
-
-                await MainActor.run {
-                    isSending = false
+                // Add the new message immediately (polling will keep it in sync)
+                if let newMsg = response.first {
+                    await MainActor.run {
+                        messages.append(newMsg)
+                        isSending = false
+                    }
+                } else {
+                    await MainActor.run {
+                        isSending = false
+                    }
                 }
             } catch {
                 print("❌ Error sending message: \(error)")
@@ -266,8 +290,61 @@ struct ChatView: View {
                 await MainActor.run {
                     newMessage = messageText // Restore message on error
                     isSending = false
+                    errorMessage = "Failed to send message. Please try again."
+                    showError = true
                 }
             }
+        }
+    }
+
+    func startPollingForMessages() {
+        guard let conversationId = conversationId else {
+            print("⚠️ Cannot start polling - missing conversationId")
+            return
+        }
+
+        print("🔔 Starting message polling for conversation: \(conversationId)")
+
+        pollingTask = Task {
+            while !Task.isCancelled {
+                do {
+                    // Wait 2 seconds between polls
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+
+                    guard !Task.isCancelled else { break }
+
+                    // Load latest messages
+                    let response: [Message] = try await SupabaseManager.shared.client
+                        .from("messages")
+                        .select()
+                        .eq("conversation_id", value: conversationId.uuidString)
+                        .order("created_at", ascending: true)
+                        .execute()
+                        .value
+
+                    await MainActor.run {
+                        let currentCount = messages.count
+                        let newCount = response.count
+
+                        // Only update if there are new messages
+                        if newCount > currentCount {
+                            print("📨 Found \(newCount - currentCount) new message(s)")
+                            messages = response
+
+                            // Mark new messages as read
+                            Task {
+                                try? await markMessagesAsRead()
+                            }
+                        }
+                    }
+                } catch {
+                    if Task.isCancelled {
+                        break
+                    }
+                    print("⚠️ Error polling for messages: \(error)")
+                }
+            }
+            print("🔕 Message polling stopped")
         }
     }
 }

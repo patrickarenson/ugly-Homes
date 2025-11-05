@@ -13,6 +13,7 @@ struct FeedView: View {
     @State private var isLoading = true
     @State private var showCreatePost = false
     @State private var searchText = ""
+    @State private var searchResults: [Home] = []
     @State private var showNotifications = false
     @State private var unreadNotificationsCount = 0
     @State private var newlyCreatedPostIds: Set<UUID> = [] // Track posts created this session
@@ -21,23 +22,23 @@ struct FeedView: View {
         if searchText.isEmpty {
             return homes
         } else {
-            // Debug: Print all usernames in feed
-            if allHomes.first?.id == allHomes.first?.id {
-                print("🔍 [FeedView] Total homes in feed: \(allHomes.count)")
-                print("🔍 [FeedView] All usernames in feed:")
-                for (index, home) in allHomes.prefix(10).enumerated() {
-                    print("   \(index + 1). \(home.profile?.username ?? "NO USERNAME") (ID: \(home.userId))")
-                }
-                print("🔍 [FeedView] Searching for: '\(searchText)'")
-            }
+            // When searching, use searchResults if available, otherwise fall back to allHomes
+            let searchSource = searchResults.isEmpty ? allHomes : searchResults
 
-            let filtered = allHomes.filter { home in
+            let filtered = searchSource.filter { home in
                 let search = searchText.lowercased()
+                // Normalize search: remove # and spaces for flexible matching
+                let normalizedSearch = search.replacingOccurrences(of: "#", with: "").replacingOccurrences(of: " ", with: "")
 
                 // Search by tags (hashtags)
                 if let tags = home.tags {
+                    print("🔍 Checking home '\(home.title)' with tags: \(tags)")
                     for tag in tags {
-                        if tag.lowercased().contains(search) {
+                        let normalizedTag = tag.lowercased().replacingOccurrences(of: "#", with: "").replacingOccurrences(of: " ", with: "")
+                        // Match if normalized tag contains normalized search
+                        // This makes "open house", "#openhouse", "OpenHouse" all match #OpenHouse
+                        if normalizedTag.contains(normalizedSearch) || tag.lowercased().contains(search) {
+                            print("✅ MATCH FOUND: '\(tag)' matches search '\(search)'")
                             return true
                         }
                     }
@@ -45,7 +46,6 @@ struct FeedView: View {
 
                 // Search by username
                 if let username = home.profile?.username, username.lowercased().contains(search) {
-                    print("✅ [FeedView] Found match in username: \(username)")
                     return true
                 }
 
@@ -65,7 +65,6 @@ struct FeedView: View {
                 return false
             }
 
-            print("🔍 [FeedView] Search for '\(searchText)' returned \(filtered.count) results")
             return filtered
         }
     }
@@ -75,6 +74,39 @@ struct FeedView: View {
             VStack(spacing: 0) {
                 // Search bar
                 HStack(spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 14))
+
+                        TextField("Search by tag, username, or address", text: $searchText)
+                            .textFieldStyle(.plain)
+                            .autocorrectionDisabled()
+                            .font(.system(size: 15))
+                            .onChange(of: searchText) { oldValue, newValue in
+                                if !newValue.isEmpty && newValue.count >= 2 {
+                                    performDatabaseSearch(query: newValue)
+                                } else {
+                                    searchResults = []
+                                }
+                            }
+
+                        if !searchText.isEmpty {
+                            Button(action: {
+                                searchText = ""
+                                searchResults = []
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 14))
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+
                     // Notifications button with badge
                     Button(action: {
                         showNotifications = true
@@ -97,31 +129,6 @@ struct FeedView: View {
                             }
                         }
                     }
-
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 14))
-
-                        TextField("Search by tag, username, or address", text: $searchText)
-                            .textFieldStyle(.plain)
-                            .autocorrectionDisabled()
-                            .font(.system(size: 15))
-
-                        if !searchText.isEmpty {
-                            Button(action: {
-                                searchText = ""
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.secondary)
-                                    .font(.system(size: 14))
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
 
                     Button(action: {
                         showCreatePost = true
@@ -241,11 +248,46 @@ struct FeedView: View {
             .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("RefreshNotifications"))) { _ in
                 loadUnreadNotificationsCount()
             }
+            .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("SetSearchText"))) { notification in
+                if let tag = notification.userInfo?["searchText"] as? String {
+                    print("🔍 Setting search text from notification: \(tag)")
+                    searchText = tag
+                }
+            }
         }
     }
 
     func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+
+    func performDatabaseSearch(query: String) {
+        Task {
+            do {
+                print("🔍 Performing database search for: \(query)")
+
+                // Search all posts in database (including current user's posts)
+                let response: [Home] = try await SupabaseManager.shared.client
+                    .from("homes")
+                    .select("*, profile:user_id(*)")
+                    .eq("is_active", value: true)
+                    .eq("is_archived", value: false)
+                    .limit(50)
+                    .execute()
+                    .value
+
+                print("✅ Database search returned \(response.count) total results")
+
+                await MainActor.run {
+                    searchResults = response
+                }
+            } catch {
+                print("❌ Error performing database search: \(error)")
+                await MainActor.run {
+                    searchResults = []
+                }
+            }
+        }
     }
 
     func loadHomes() {
@@ -328,10 +370,11 @@ struct FeedView: View {
 
                 let response: [TrendingHomeResponse] = try await SupabaseManager.shared.client
                     .rpc("get_trending_homes", params: ["requesting_user_id": userId])
+                    .limit(30)  // Only load 30 homes initially for faster load
                     .execute()
                     .value
 
-                print("✅ Loaded \(response.count) trending homes")
+                print("✅ Loaded \(response.count) trending homes (limited for performance)")
 
                 // OPTIMIZATION: Fetch all profiles in a single query instead of one-by-one
                 struct ProfileResponse: Codable {
@@ -340,6 +383,7 @@ struct FeedView: View {
                     let fullName: String?
                     let avatarUrl: String?
                     let bio: String?
+                    let isVerified: Bool?
                     let createdAt: Date
                     let updatedAt: Date
 
@@ -349,6 +393,7 @@ struct FeedView: View {
                         case fullName = "full_name"
                         case avatarUrl = "avatar_url"
                         case bio
+                        case isVerified = "is_verified"
                         case createdAt = "created_at"
                         case updatedAt = "updated_at"
                     }
@@ -377,6 +422,8 @@ struct FeedView: View {
                         fullName: p.fullName,
                         avatarUrl: p.avatarUrl,
                         bio: p.bio,
+                        market: nil,
+                        isVerified: p.isVerified,
                         createdAt: p.createdAt,
                         updatedAt: p.updatedAt
                     )
@@ -479,16 +526,21 @@ struct FeedView: View {
     func loadUnreadNotificationsCount() {
         Task {
             do {
+                // Get current user ID
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                // Load only THIS user's unread notifications
                 let response: [AppNotification] = try await SupabaseManager.shared.client
                     .from("notifications")
                     .select()
+                    .eq("user_id", value: userId.uuidString)
                     .eq("is_read", value: false)
                     .execute()
                     .value
 
                 await MainActor.run {
                     unreadNotificationsCount = response.count
-                    print("🔔 Unread notifications: \(response.count)")
+                    print("🔔 Unread notifications for user \(userId): \(response.count)")
                 }
             } catch {
                 print("❌ Error loading unread notifications count: \(error)")
@@ -584,10 +636,16 @@ struct HomePostView: View {
                     // Line 1: Username + badges
                     HStack(spacing: 8) {
                         NavigationLink(destination: ProfileView(viewingUserId: home.userId)) {
-                            Text("\(home.profile?.username ?? "user")")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.primary)
+                            HStack(spacing: 4) {
+                                Text("\(home.profile?.username ?? "user")")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.primary)
+
+                                if home.profile?.isVerified == true {
+                                    VerifiedBadge()
+                                }
+                            }
                         }
 
                         // Sold/Leased/Pending badge
@@ -988,7 +1046,7 @@ struct HomePostView: View {
                                 .fontWeight(.semibold)
                         }
                         .padding()
-                        .background(Color.green)
+                        .background(Color.black)
                         .cornerRadius(10)
                         .shadow(radius: 10)
                         .padding(.bottom, 50)
@@ -1091,6 +1149,7 @@ struct HomePostView: View {
 
                         struct NewNotification: Encodable {
                             let user_id: String
+                            let triggered_by_user_id: String
                             let type: String
                             let title: String
                             let message: String
@@ -1100,6 +1159,7 @@ struct HomePostView: View {
                         let username = currentUsername?.username ?? "Someone"
                         let notification = NewNotification(
                             user_id: home.userId.uuidString,
+                            triggered_by_user_id: userId.uuidString,
                             type: "like",
                             title: "New Like",
                             message: "\(username) liked your post",
@@ -1590,6 +1650,7 @@ struct HomePostView: View {
                 for savedUser in savedByUsers {
                     struct NewNotification: Encodable {
                         let user_id: String
+                        let triggered_by_user_id: String
                         let type: String
                         let title: String
                         let message: String
@@ -1599,6 +1660,7 @@ struct HomePostView: View {
                     let address = home.address ?? "a property"
                     let notification = NewNotification(
                         user_id: savedUser.userId.uuidString,
+                        triggered_by_user_id: userId.uuidString,
                         type: "open_house_cancelled",
                         title: "Open House Cancelled",
                         message: "The open house at \(address) has been cancelled by the owner.",

@@ -21,6 +21,7 @@ struct AuthView: View {
     @State private var biometricType: BiometricType = .none
     @State private var hasSavedCredentials = false
     @State private var showSaveBiometricPrompt = false
+    @State private var rememberMe = true  // Default to true
 
     var body: some View {
         ZStack {
@@ -47,14 +48,15 @@ struct AuthView: View {
                         .frame(width: 200, height: 200)
                         .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 8)
 
-                    Text("Talk Homes. Discover Deals.")
+                    Text("The Social Marketplace for Real Estate")
                         .font(.system(size: 16))
                         .foregroundColor(.white.opacity(0.95))
                         .fontWeight(.medium)
-                        .offset(y: -20)
+                        .multilineTextAlignment(.center)
+                        .offset(y: -60)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.bottom, 40)
+                .padding(.bottom, 20)
 
                 // Auth card
                 VStack(spacing: 20) {
@@ -113,6 +115,25 @@ struct AuthView: View {
                             .padding(.vertical, 8)
                             .background(Color.red.opacity(0.8))
                             .cornerRadius(8)
+                    }
+
+                    // Remember Me checkbox (only on login)
+                    if !isSignUp {
+                        HStack {
+                            Button(action: {
+                                rememberMe.toggle()
+                            }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: rememberMe ? "checkmark.square.fill" : "square")
+                                        .foregroundColor(.white.opacity(0.9))
+                                        .font(.system(size: 20))
+                                    Text("Remember me")
+                                        .foregroundColor(.white.opacity(0.9))
+                                        .font(.system(size: 14))
+                                }
+                            }
+                            Spacer()
+                        }
                     }
 
                     // Auth button
@@ -216,6 +237,7 @@ struct AuthView: View {
         }
         .onAppear {
             checkBiometricAvailability()
+            loadSavedCredentials()
         }
     }
 
@@ -270,6 +292,13 @@ struct AuthView: View {
                     )
 
                     print("✅ Login successful! User ID: \(response.user.id)")
+
+                    // Save credentials if Remember Me is checked
+                    if rememberMe {
+                        saveCredentials()
+                    } else {
+                        clearSavedCredentials()
+                    }
 
                     // Prompt to save credentials if biometric is available and not already saved
                     await MainActor.run {
@@ -360,6 +389,33 @@ struct AuthView: View {
         }
         // Trigger auth state change after user responds to prompt
         NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
+    }
+
+    // MARK: - Remember Me Functions
+
+    func saveCredentials() {
+        UserDefaults.standard.set(email, forKey: "savedEmail")
+        UserDefaults.standard.set(password, forKey: "savedPassword")
+        UserDefaults.standard.set(true, forKey: "rememberMe")
+        print("💾 Credentials saved for Remember Me")
+    }
+
+    func loadSavedCredentials() {
+        if let savedEmail = UserDefaults.standard.string(forKey: "savedEmail"),
+           let savedPassword = UserDefaults.standard.string(forKey: "savedPassword"),
+           UserDefaults.standard.bool(forKey: "rememberMe") {
+            email = savedEmail
+            password = savedPassword
+            rememberMe = true
+            print("✅ Loaded saved credentials")
+        }
+    }
+
+    func clearSavedCredentials() {
+        UserDefaults.standard.removeObject(forKey: "savedEmail")
+        UserDefaults.standard.removeObject(forKey: "savedPassword")
+        UserDefaults.standard.set(false, forKey: "rememberMe")
+        print("🗑️ Cleared saved credentials")
     }
 }
 

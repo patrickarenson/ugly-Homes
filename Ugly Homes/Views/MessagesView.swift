@@ -7,6 +7,56 @@
 
 import SwiftUI
 
+class UnreadMessagesManager: ObservableObject {
+    @Published var totalUnreadCount: Int = 0
+    private var pollingTask: Task<Void, Never>?
+
+    func startPolling() {
+        print("🔔 Starting unread messages polling")
+        pollingTask?.cancel()
+
+        pollingTask = Task {
+            // Load immediately
+            await loadUnreadCount()
+
+            // Then poll every 5 seconds
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 5_000_000_000)
+                    guard !Task.isCancelled else { break }
+                    await loadUnreadCount()
+                } catch {
+                    if Task.isCancelled { break }
+                }
+            }
+            print("🔕 Unread messages polling stopped")
+        }
+    }
+
+    func stopPolling() {
+        pollingTask?.cancel()
+    }
+
+    func loadUnreadCount() async {
+        do {
+            let response: [ConversationPreview] = try await SupabaseManager.shared.client
+                .from("conversation_previews")
+                .select()
+                .execute()
+                .value
+
+            let totalUnread = response.reduce(0) { $0 + $1.unreadCount }
+
+            await MainActor.run {
+                self.totalUnreadCount = totalUnread
+                print("📬 Updated unread count: \(totalUnread)")
+            }
+        } catch {
+            print("⚠️ Error loading unread count: \(error)")
+        }
+    }
+}
+
 struct SelectedUserInfo: Identifiable, Equatable {
     let id = UUID()
     let userId: UUID
@@ -19,6 +69,7 @@ struct SelectedUserInfo: Identifiable, Equatable {
 }
 
 struct MessagesView: View {
+    @EnvironmentObject var unreadManager: UnreadMessagesManager
     @State private var conversations: [ConversationPreview] = []
     @State private var isLoading = false
     @State private var selectedUserInfo: SelectedUserInfo?
@@ -139,8 +190,13 @@ struct MessagesView: View {
                     print("  📬 \(conv.otherUsername): \(conv.unreadCount) unread")
                 }
 
-                conversations = response
-                isLoading = false
+                await MainActor.run {
+                    conversations = response
+                    isLoading = false
+                }
+
+                // Update unread count
+                await unreadManager.loadUnreadCount()
             } catch {
                 print("❌ Error loading conversations: \(error)")
                 isLoading = false
@@ -425,4 +481,5 @@ struct NewMessageView: View {
 
 #Preview {
     MessagesView()
+        .environmentObject(UnreadMessagesManager())
 }

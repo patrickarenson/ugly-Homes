@@ -23,6 +23,9 @@ struct AccountSettingsView: View {
     @State private var showChangePassword = false
     @State private var showDeleteAlert = false
     @State private var deleteConfirmationText = ""
+    @State private var isMigratingTags = false
+    @State private var migrationMessage = ""
+    @State private var isAdmin = false
 
     var body: some View {
         NavigationView {
@@ -118,6 +121,57 @@ struct AccountSettingsView: View {
                     Text("Password")
                 }
 
+                // Admin Tools section (only for housers and patrick)
+                if isAdmin {
+                    Section {
+                        Button(action: {
+                            migrateAllTags()
+                        }) {
+                            HStack {
+                                if isMigratingTags {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle())
+                                    Text("Updating Tags...")
+                                } else {
+                                    Image(systemName: "tag.fill")
+                                    Text("Regenerate All Property Tags")
+                                }
+                            }
+                            .foregroundColor(.blue)
+                        }
+                        .disabled(isMigratingTags)
+
+                        Button(action: {
+                            migrateOpenHouseTags()
+                        }) {
+                            HStack {
+                                if isMigratingTags {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle())
+                                    Text("Adding #OpenHouse Tags...")
+                                } else {
+                                    Image(systemName: "calendar.badge.plus")
+                                    Text("Add #OpenHouse Tags to Existing Posts")
+                                }
+                            }
+                            .foregroundColor(.orange)
+                        }
+                        .disabled(isMigratingTags)
+
+                        if !migrationMessage.isEmpty {
+                            Text(migrationMessage)
+                                .font(.caption)
+                                .foregroundColor(migrationMessage.contains("✅") ? .green : .red)
+                        }
+                    } header: {
+                        Text("Admin Tools")
+                    } footer: {
+                        Text("Regenerate tags for all properties or add #OpenHouse tag to existing posts with open houses for searchability.")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                }
+
                 // Delete account section
                 Section {
                     Button(action: {
@@ -165,6 +219,7 @@ struct AccountSettingsView: View {
             }
             .onAppear {
                 loadCurrentEmail()
+                checkAdminStatus()
             }
             .alert("Delete Account", isPresented: $showDeleteAlert) {
                 TextField("Type DELETE to confirm", text: $deleteConfirmationText)
@@ -195,6 +250,37 @@ struct AccountSettingsView: View {
                 currentEmail = user.email ?? ""
             } catch {
                 print("❌ Error loading user: \(error)")
+            }
+        }
+    }
+
+    func checkAdminStatus() {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                struct ProfileUsername: Codable {
+                    let username: String
+                }
+
+                let profile: ProfileUsername = try await SupabaseManager.shared.client
+                    .from("profiles")
+                    .select("username")
+                    .eq("id", value: userId.uuidString)
+                    .single()
+                    .execute()
+                    .value
+
+                // Only housers and patrick have admin access
+                let adminUsernames = ["housers", "patrick"]
+                await MainActor.run {
+                    isAdmin = adminUsernames.contains(profile.username.lowercased())
+                }
+            } catch {
+                print("❌ Error checking admin status: \(error)")
+                await MainActor.run {
+                    isAdmin = false
+                }
             }
         }
     }
@@ -306,6 +392,12 @@ struct AccountSettingsView: View {
                 // For now, just sign out
                 try await SupabaseManager.shared.client.auth.signOut()
 
+                // Clear saved credentials
+                UserDefaults.standard.removeObject(forKey: "savedEmail")
+                UserDefaults.standard.removeObject(forKey: "savedPassword")
+                UserDefaults.standard.set(false, forKey: "rememberMe")
+                print("🗑️ Cleared saved credentials")
+
                 print("✅ Account deletion completed")
 
                 // Notify the app to return to auth screen
@@ -319,6 +411,46 @@ struct AccountSettingsView: View {
                 print("❌ Error deleting account: \(error)")
                 errorMessage = "Failed to delete account: \(error.localizedDescription)"
                 isLoading = false
+            }
+        }
+    }
+
+    func migrateAllTags() {
+        isMigratingTags = true
+        migrationMessage = ""
+
+        Task {
+            do {
+                try await TagMigrationHelper.updateAllPropertyTags()
+                await MainActor.run {
+                    migrationMessage = "✅ Successfully updated all property tags!"
+                    isMigratingTags = false
+                }
+            } catch {
+                await MainActor.run {
+                    migrationMessage = "❌ Error: \(error.localizedDescription)"
+                    isMigratingTags = false
+                }
+            }
+        }
+    }
+
+    func migrateOpenHouseTags() {
+        isMigratingTags = true
+        migrationMessage = ""
+
+        Task {
+            do {
+                try await OpenHouseTagMigration.addOpenHouseTagsToExistingPosts()
+                await MainActor.run {
+                    migrationMessage = "✅ Successfully added #OpenHouse tags!"
+                    isMigratingTags = false
+                }
+            } catch {
+                await MainActor.run {
+                    migrationMessage = "❌ Error: \(error.localizedDescription)"
+                    isMigratingTags = false
+                }
             }
         }
     }

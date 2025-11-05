@@ -450,8 +450,12 @@
 				INFOPLIST_FILE = "Ugly-Homes-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Housers;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Houser needs access to your camera to take photos of properties you want to post.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "We use Face ID to securely sign you in to your \n  account";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We need your location to show nearby properties on the map and help you find homes in your area.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Houser uses your location to show you nearby properties and open houses.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Houser needs permission to save property photos to your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Houser needs access to your photo library to select photos of properties you want to post.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -488,8 +492,12 @@
 				INFOPLIST_FILE = "Ugly-Homes-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Housers;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Houser needs access to your camera to take photos of properties you want to post.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "We use Face ID to securely sign you in to your \n  account";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We need your location to show nearby properties on the map and help you find homes in your area.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Houser uses your location to show you nearby properties and open houses.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Houser needs permission to save property photos to your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Houser needs access to your photo library to select photos of properties you want to post.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

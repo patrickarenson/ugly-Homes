@@ -10,8 +10,6 @@ import SwiftUI
 struct NotificationsView: View {
     @State private var notifications: [AppNotification] = []
     @State private var isLoading = false
-    @State private var selectedUserId: UUID? = nil
-    @State private var showUserProfile = false
 
     var body: some View {
         NavigationView {
@@ -30,19 +28,13 @@ struct NotificationsView: View {
                 } else {
                     List {
                         ForEach(notifications) { notification in
-                            NotificationRow(notification: notification, onTap: {
-                                print("🔵 Notification tapped: \(notification.title)")
-                                print("🔵 Triggered by user ID: \(notification.triggeredByUserId?.uuidString ?? "nil")")
+                            NotificationRowContent(
+                                notification: notification,
+                                triggeredByUserId: notification.triggeredByUserId
+                            )
+                            .onTapGesture {
                                 markAsRead(notification)
-                                // Navigate to user profile if available
-                                if let triggeredBy = notification.triggeredByUserId {
-                                    selectedUserId = triggeredBy
-                                    showUserProfile = true
-                                    print("🔵 Navigating to profile: \(triggeredBy)")
-                                } else {
-                                    print("❌ No triggeredByUserId found for this notification")
-                                }
-                            })
+                            }
                         }
                     }
                     .listStyle(.plain)
@@ -65,21 +57,6 @@ struct NotificationsView: View {
             }
             .refreshable {
                 loadNotifications()
-            }
-            .sheet(isPresented: $showUserProfile) {
-                if let userId = selectedUserId {
-                    NavigationView {
-                        ProfileView(viewingUserId: userId)
-                            .navigationBarTitleDisplayMode(.inline)
-                            .toolbar {
-                                ToolbarItem(placement: .navigationBarLeading) {
-                                    Button("Close") {
-                                        showUserProfile = false
-                                    }
-                                }
-                            }
-                    }
-                }
             }
         }
     }
@@ -204,50 +181,109 @@ struct NotificationsView: View {
     }
 }
 
-struct NotificationRow: View {
+struct NotificationRowContent: View {
     let notification: AppNotification
-    let onTap: () -> Void
+    let triggeredByUserId: UUID?
+    @State private var navigateToProfile = false
+    @State private var postImageUrl: String?
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                // Icon based on notification type
-                Circle()
-                    .fill(iconColor)
-                    .frame(width: 44, height: 44)
-                    .overlay(
-                        Image(systemName: iconName)
-                            .font(.system(size: 20))
-                            .foregroundColor(.white)
-                    )
+        HStack(spacing: 12) {
+            // Icon based on notification type
+            Circle()
+                .fill(iconColor)
+                .frame(width: 44, height: 44)
+                .overlay(
+                    Image(systemName: iconName)
+                        .font(.system(size: 20))
+                        .foregroundColor(.white)
+                )
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(notification.title)
-                        .font(.system(size: 15, weight: notification.isRead ? .regular : .semibold))
-                        .foregroundColor(.primary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(notification.title)
+                    .font(.system(size: 15, weight: notification.isRead ? .regular : .semibold))
+                    .foregroundColor(.primary)
 
-                    Text(notification.message)
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
+                formattedMessage(notification.message, triggeredByUserId: triggeredByUserId)
 
-                    Text(timeAgo(from: notification.createdAt))
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
+                Text(timeAgo(from: notification.createdAt))
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
 
-                Spacer()
+            Spacer()
 
-                // Unread indicator
-                if !notification.isRead {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 10, height: 10)
+            // Post thumbnail
+            if let imageUrl = postImageUrl {
+                AsyncImage(url: URL(string: imageUrl)) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 50, height: 50)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                } placeholder: {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 50, height: 50)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
-            .padding(.vertical, 8)
+
+            // Unread indicator
+            if !notification.isRead {
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 10, height: 10)
+            }
         }
-        .buttonStyle(PlainButtonStyle())
+        .padding(.vertical, 8)
+        .background(
+            Group {
+                if let userId = triggeredByUserId {
+                    NavigationLink(
+                        destination: ProfileView(viewingUserId: userId),
+                        isActive: $navigateToProfile
+                    ) {
+                        EmptyView()
+                    }
+                    .hidden()
+                }
+            }
+        )
+        .onAppear {
+            loadPostImage()
+        }
+    }
+
+    func loadPostImage() {
+        guard let homeId = notification.homeId else { return }
+
+        Task {
+            do {
+                struct HomeImage: Codable {
+                    let imageUrls: [String]
+
+                    enum CodingKeys: String, CodingKey {
+                        case imageUrls = "image_urls"
+                    }
+                }
+
+                let response: [HomeImage] = try await SupabaseManager.shared.client
+                    .from("homes")
+                    .select("image_urls")
+                    .eq("id", value: homeId.uuidString)
+                    .execute()
+                    .value
+
+                if let firstUrl = response.first?.imageUrls.first {
+                    await MainActor.run {
+                        postImageUrl = firstUrl
+                    }
+                }
+            } catch {
+                print("❌ Error loading post image: \(error)")
+            }
+        }
     }
 
     var iconName: String {
@@ -291,6 +327,28 @@ struct NotificationRow: View {
             return "\(minute)m ago"
         } else {
             return "just now"
+        }
+    }
+
+    func formattedMessage(_ message: String, triggeredByUserId: UUID?) -> some View {
+        let cleanMessage = message.replacingOccurrences(of: ">", with: "").replacingOccurrences(of: "  ", with: " ").trimmingCharacters(in: .whitespaces)
+        let parts = cleanMessage.components(separatedBy: " ")
+        let username = parts.first ?? ""
+        let rest = parts.dropFirst().joined(separator: " ")
+
+        return ZStack(alignment: .leading) {
+            (Text(username).fontWeight(.bold).foregroundColor(.black) + Text(" \(rest)").foregroundColor(.secondary))
+                .font(.system(size: 14))
+                .lineLimit(2)
+
+            if triggeredByUserId != nil {
+                Text(username)
+                    .fontWeight(.bold)
+                    .foregroundColor(.clear)
+                    .onTapGesture {
+                        navigateToProfile = true
+                    }
+            }
         }
     }
 }

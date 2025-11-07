@@ -15,12 +15,8 @@ struct ProfileView: View {
     @State private var isLoading = false
     @State private var showEditProfile = false
     @State private var showAccountSettings = false
-    @State private var selectedHome: Home?
-    @State private var showPostDetail = false
     @State private var currentUserId: UUID?
     @State private var showChat = false
-    @State private var searchText = "" // For tag filtering
-    @State private var isLoadingPost = false
 
     init(viewingUserId: UUID? = nil) {
         self.viewingUserId = viewingUserId
@@ -121,7 +117,7 @@ struct ProfileView: View {
                             .padding(.top, 8)
                         }
                     }
-                    .padding(.top, 20)
+                    .padding(.top)
 
                     // Stats - Modern, compact single row
                     HStack(spacing: 0) {
@@ -189,72 +185,62 @@ struct ProfileView: View {
                         ], spacing: 2) {
                             ForEach(userHomes) { home in
                                 if let imageUrl = home.imageUrls.first {
-                                    ZStack(alignment: .topTrailing) {
-                                        AsyncImage(url: URL(string: imageUrl)) { phase in
-                                            switch phase {
-                                            case .empty:
-                                                Rectangle()
-                                                    .fill(Color.gray.opacity(0.2))
-                                                    .aspectRatio(1, contentMode: .fill)
-                                            case .success(let image):
-                                                image
-                                                    .resizable()
-                                                    .aspectRatio(1, contentMode: .fill)
-                                            case .failure:
-                                                Rectangle()
-                                                    .fill(Color.gray.opacity(0.2))
-                                                    .aspectRatio(1, contentMode: .fill)
-                                            @unknown default:
-                                                Rectangle()
-                                                    .fill(Color.gray.opacity(0.2))
-                                                    .aspectRatio(1, contentMode: .fill)
-                                            }
-                                        }
-                                        .clipped()
-
-                                        VStack(alignment: .trailing, spacing: 4) {
-                                            // Sold/Leased/Pending badge overlay
-                                            if let soldStatus = home.soldStatus {
-                                                Text(soldStatus.uppercased())
-                                                    .font(.system(size: 9, weight: .bold))
-                                                    .foregroundColor(.white)
-                                                    .padding(.horizontal, 6)
-                                                    .padding(.vertical, 3)
-                                                    .background(
-                                                        soldStatus == "sold" ? Color.red :
-                                                        soldStatus == "leased" ? Color.blue :
-                                                        soldStatus == "pending" ? Color.yellow : Color.gray
-                                                    )
-                                                    .cornerRadius(4)
-                                            }
-
-                                            // Open House badge
-                                            if home.openHousePaid == true, let openHouseDate = home.openHouseDate {
-                                                // Only show if open house is in the future or within the last 24 hours
-                                                let isUpcoming = openHouseDate > Date().addingTimeInterval(-86400)
-                                                if isUpcoming {
-                                                    Text("OPEN HOUSE")
-                                                        .font(.system(size: 8, weight: .bold))
-                                                        .foregroundColor(.white)
-                                                        .padding(.horizontal, 5)
-                                                        .padding(.vertical, 2)
-                                                        .background(Color.green)
-                                                        .cornerRadius(4)
+                                    NavigationLink(destination: PostDetailView(home: home, showSoldOptions: !isViewingOtherProfile, preloadedUserId: currentUserId)) {
+                                        ZStack(alignment: .topTrailing) {
+                                            AsyncImage(url: URL(string: imageUrl)) { phase in
+                                                switch phase {
+                                                case .empty:
+                                                    Rectangle()
+                                                        .fill(Color.gray.opacity(0.2))
+                                                        .aspectRatio(1, contentMode: .fill)
+                                                case .success(let image):
+                                                    image
+                                                        .resizable()
+                                                        .aspectRatio(1, contentMode: .fill)
+                                                case .failure:
+                                                    Rectangle()
+                                                        .fill(Color.gray.opacity(0.2))
+                                                        .aspectRatio(1, contentMode: .fill)
+                                                @unknown default:
+                                                    Rectangle()
+                                                        .fill(Color.gray.opacity(0.2))
+                                                        .aspectRatio(1, contentMode: .fill)
                                                 }
                                             }
-                                        }
-                                        .padding(4)
-                                    }
-                                    .onTapGesture {
-                                        print("🔵 Post tapped: \(home.title)")
-                                        print("🔵 Home has profile: \(home.profile != nil)")
-                                        isLoadingPost = true
-                                        selectedHome = home
+                                            .clipped()
 
-                                        // Small delay to ensure state updates
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                            showPostDetail = true
-                                            isLoadingPost = false
+                                            VStack(alignment: .trailing, spacing: 4) {
+                                                // Sold/Leased/Pending badge overlay
+                                                if let soldStatus = home.soldStatus {
+                                                    Text(soldStatus.uppercased())
+                                                        .font(.system(size: 9, weight: .bold))
+                                                        .foregroundColor(.white)
+                                                        .padding(.horizontal, 6)
+                                                        .padding(.vertical, 3)
+                                                        .background(
+                                                            soldStatus == "sold" ? Color.red :
+                                                            soldStatus == "leased" ? Color.blue :
+                                                            soldStatus == "pending" ? Color.yellow : Color.gray
+                                                        )
+                                                        .cornerRadius(4)
+                                                }
+
+                                                // Open House badge
+                                                if home.openHousePaid == true, let openHouseDate = home.openHouseDate {
+                                                    // Only show if open house is in the future or within the last 24 hours
+                                                    let isUpcoming = openHouseDate > Date().addingTimeInterval(-86400)
+                                                    if isUpcoming {
+                                                        Text("OPEN HOUSE")
+                                                            .font(.system(size: 8, weight: .bold))
+                                                            .foregroundColor(.white)
+                                                            .padding(.horizontal, 5)
+                                                            .padding(.vertical, 2)
+                                                            .background(Color.green)
+                                                            .cornerRadius(4)
+                                                    }
+                                                }
+                                            }
+                                            .padding(4)
                                         }
                                     }
                                 }
@@ -274,20 +260,9 @@ struct ProfileView: View {
                 }
             }
         }
-        .overlay(
-            // Loading indicator when opening post
-            Group {
-                if isLoadingPost {
-                    ZStack {
-                        Color.black.opacity(0.3)
-                            .ignoresSafeArea()
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(1.5)
-                    }
-                }
-            }
-        )
+        .safeAreaInset(edge: .top) {
+            Color.clear.frame(height: 8)
+        }
         .navigationTitle(isViewingOtherProfile ? (profile?.username ?? "Profile") : "Profile")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -326,56 +301,6 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showAccountSettings) {
             AccountSettingsView()
-        }
-        .fullScreenCover(isPresented: $showPostDetail) {
-            if let home = selectedHome {
-                let _ = print("🟢 fullScreenCover presenting for: \(home.title)")
-                ZStack(alignment: .topTrailing) {
-                    // Main content - no NavigationView to reduce whitespace
-                    ScrollView {
-                        HomePostView(home: home, searchText: $searchText, showSoldOptions: !isViewingOtherProfile, preloadedUserId: currentUserId)
-                    }
-                    .ignoresSafeArea(.all)
-                    .onChange(of: searchText) { oldValue, newValue in
-                        // If user taps a tag, close popup and navigate to feed with search
-                        if !newValue.isEmpty && oldValue.isEmpty {
-                            print("🏷️ Tag tapped: \(newValue), navigating to feed")
-                            showPostDetail = false
-                            // Post notification to switch to feed tab and search
-                            NotificationCenter.default.post(
-                                name: NSNotification.Name("SearchByTag"),
-                                object: nil,
-                                userInfo: ["tag": newValue]
-                            )
-                            // Clear searchText so it can be used again
-                            searchText = ""
-                        }
-                    }
-
-                    // Close button overlay - RIGHT SIDE
-                    Button(action: {
-                        print("🔴 Close tapped")
-                        showPostDetail = false
-                    }) {
-                        HStack {
-                            Text("Close")
-                                .font(.system(size: 16))
-                            Image(systemName: "xmark")
-                                .font(.system(size: 16, weight: .semibold))
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.black.opacity(0.6))
-                        .cornerRadius(20)
-                    }
-                    .padding(.top, 8)
-                    .padding(.trailing, 16)
-                }
-            } else {
-                let _ = print("❌ fullScreenCover: selectedHome is nil!")
-                Text("Error loading post")
-            }
         }
         .sheet(isPresented: $showChat) {
             if let profile = profile {
@@ -505,6 +430,35 @@ struct ProfileView: View {
     }
 }
 
+
+// Post Detail View - wraps HomePostView for NavigationLink
+struct PostDetailView: View {
+    let home: Home
+    let showSoldOptions: Bool
+    let preloadedUserId: UUID?
+    @State private var searchText = ""
+
+    var body: some View {
+        ScrollView {
+            HomePostView(home: home, searchText: $searchText, showSoldOptions: showSoldOptions, preloadedUserId: preloadedUserId)
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: searchText) { oldValue, newValue in
+            // If user taps a tag, post notification to switch to feed tab and search
+            if !newValue.isEmpty && oldValue.isEmpty {
+                print("🏷️ Tag tapped: \(newValue), navigating to feed")
+                // Post notification to switch to feed tab and search
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("SearchByTag"),
+                    object: nil,
+                    userInfo: ["tag": newValue]
+                )
+                // Clear searchText so it can be used again
+                searchText = ""
+            }
+        }
+    }
+}
 
 #Preview {
     ProfileView()

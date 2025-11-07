@@ -305,16 +305,66 @@ struct ShareSheet: View {
     func shareViaMessages() {
         trackShare()
 
-        // Load the image to share along with text
+        // Create beautiful composite image with property info
         Task {
-            var itemsToShare: [Any] = [shareText, shareURL]
+            var itemsToShare: [Any] = []
 
-            // Download and add image if available
-            if let imageUrl = home.imageUrls.first,
-               let url = URL(string: imageUrl),
-               let imageData = try? Data(contentsOf: url),
-               let image = UIImage(data: imageData) {
-                itemsToShare.insert(image, at: 0) // Add image first
+            // Generate composite share image with text overlay
+            print("🎨 Starting to create composite share image...")
+            if let shareImage = await createShareImage() {
+                print("✅ Composite image created! Size: \(shareImage.size)")
+
+                // Save to temporary file
+                if let imageData = shareImage.jpegData(compressionQuality: 0.9) {
+                    print("✅ Image converted to JPEG: \(imageData.count) bytes")
+
+                    let tempDir = FileManager.default.temporaryDirectory
+                    let fileName = "housers-share-\(UUID().uuidString).jpg"
+                    let fileURL = tempDir.appendingPathComponent(fileName)
+
+                    do {
+                        try imageData.write(to: fileURL)
+                        print("✅ Saved composite image to: \(fileURL.path)")
+                        itemsToShare.append(fileURL)
+                    } catch {
+                        print("❌ Failed to save composite: \(error.localizedDescription)")
+                    }
+                } else {
+                    print("❌ Failed to convert composite to JPEG")
+                }
+            } else {
+                print("⚠️ Composite generation failed, using original image")
+                // Fallback to original image
+                if let imageUrl = home.imageUrls.first, let url = URL(string: imageUrl) {
+                    do {
+                        let (data, _) = try await URLSession.shared.data(from: url)
+                        if let image = UIImage(data: data), let jpegData = image.jpegData(compressionQuality: 0.9) {
+                            let tempDir = FileManager.default.temporaryDirectory
+                            let fileURL = tempDir.appendingPathComponent("housers-original-\(UUID().uuidString).jpg")
+                            try jpegData.write(to: fileURL)
+                            itemsToShare.append(fileURL)
+                            print("✅ Using original image as fallback")
+                        }
+                    } catch {
+                        print("❌ Fallback failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+
+            // Add text with URL
+            let shareMessage = """
+            Check out this home on Housers!
+
+            \(home.title)
+            \(home.price != nil ? formatPrice(home.price!) : "")
+
+            \(shareURL)
+            """
+            itemsToShare.append(shareMessage)
+
+            print("📤 Sharing \(itemsToShare.count) items")
+            for (index, item) in itemsToShare.enumerated() {
+                print("   Item \(index): \(type(of: item))")
             }
 
             await MainActor.run {
@@ -323,22 +373,21 @@ struct ShareSheet: View {
                     applicationActivities: nil
                 )
 
-                // Restrict to Messages only
-                activityVC.excludedActivityTypes = [
-                    .postToFacebook,
-                    .postToTwitter,
-                    .postToWeibo,
-                    .postToVimeo,
-                    .postToFlickr,
-                    .postToTencentWeibo,
-                    .assignToContact,
-                    .saveToCameraRoll,
-                    .addToReadingList,
-                    .airDrop,
-                    .mail,
-                    .copyToPasteboard,
-                    .print
-                ]
+                // Add completion handler to dismiss after sharing is done
+                activityVC.completionWithItemsHandler = { activityType, completed, returnedItems, error in
+                    print("📊 Share activity completed: \(completed)")
+                    if let error = error {
+                        print("❌ Share error: \(error.localizedDescription)")
+                    }
+                    if let activityType = activityType {
+                        print("✅ Shared via: \(activityType.rawValue)")
+                    }
+
+                    // Dismiss the parent share sheet
+                    DispatchQueue.main.async {
+                        dismiss()
+                    }
+                }
 
                 if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                    let rootVC = windowScene.windows.first?.rootViewController {
@@ -348,10 +397,110 @@ struct ShareSheet: View {
                     }
                     topController.present(activityVC, animated: true)
                 }
-
-                dismiss()
             }
         }
+    }
+
+    // Create beautiful share image with property info overlaid
+    func createShareImage() async -> UIImage? {
+        print("🖼️ Image URL: \(home.imageUrls.first ?? "none")")
+
+        guard let imageUrl = home.imageUrls.first else {
+            print("❌ No image URL")
+            return nil
+        }
+
+        guard let url = URL(string: imageUrl) else {
+            print("❌ Invalid URL")
+            return nil
+        }
+
+        print("⬇️ Downloading image from: \(url)")
+
+        // Use async URLSession for reliable image download
+        let imageData: Data
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+
+            // Verify response
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 HTTP status: \(httpResponse.statusCode)")
+                guard httpResponse.statusCode == 200 else {
+                    print("❌ HTTP error: \(httpResponse.statusCode)")
+                    return nil
+                }
+            }
+
+            imageData = data
+            print("✅ Downloaded \(imageData.count) bytes")
+        } catch {
+            print("❌ Failed to download image data: \(error.localizedDescription)")
+            return nil
+        }
+
+        guard let propertyImage = UIImage(data: imageData) else {
+            print("❌ Failed to create UIImage from data")
+            return nil
+        }
+
+        print("✅ Created UIImage: \(propertyImage.size)")
+
+        let size = CGSize(width: 1080, height: 1080) // Square format for best compatibility
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        let compositeImage = renderer.image { context in
+            // Draw property image (fill entire canvas)
+            propertyImage.draw(in: CGRect(origin: .zero, size: size))
+
+            // Draw gradient overlay at bottom for text readability
+            let gradientLayer = CAGradientLayer()
+            gradientLayer.frame = CGRect(x: 0, y: size.height - 300, width: size.width, height: 300)
+            gradientLayer.colors = [
+                UIColor.clear.cgColor,
+                UIColor.black.withAlphaComponent(0.7).cgColor
+            ]
+            gradientLayer.render(in: context.cgContext)
+
+            // Draw text
+            let textColor = UIColor.white
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.alignment = .left
+
+            // Title
+            let addressText = home.title
+            let addressAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.boldSystemFont(ofSize: 48),
+                .foregroundColor: textColor,
+                .paragraphStyle: paragraphStyle
+            ]
+            addressText.draw(in: CGRect(x: 40, y: size.height - 220, width: size.width - 80, height: 60),
+                           withAttributes: addressAttributes)
+
+            // Price
+            if let price = home.price {
+                let priceText = formatPrice(price)
+                let priceAttributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.boldSystemFont(ofSize: 42),
+                    .foregroundColor: UIColor.systemOrange,
+                    .paragraphStyle: paragraphStyle
+                ]
+                priceText.draw(in: CGRect(x: 40, y: size.height - 150, width: size.width - 80, height: 50),
+                             withAttributes: priceAttributes)
+            }
+
+            // Full address
+            let fullAddress = "\(home.address ?? ""), \(home.city ?? "")"
+            let fullAddressAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 32),
+                .foregroundColor: textColor.withAlphaComponent(0.9),
+                .paragraphStyle: paragraphStyle
+            ]
+            fullAddress.draw(in: CGRect(x: 40, y: size.height - 90, width: size.width - 80, height: 40),
+                           withAttributes: fullAddressAttributes)
+        }
+
+        print("✅ Composite image created successfully!")
+        return compositeImage
     }
 
     func shareViaWhatsApp() {
@@ -410,23 +559,84 @@ struct ShareSheet: View {
     func showSystemShareSheet() {
         trackShare()
 
-        // Load the image to share along with text
+        // Create beautiful composite image with property info
         Task {
-            var itemsToShare: [Any] = [shareText, shareURL]
+            var itemsToShare: [Any] = []
 
-            // Download and add image if available
-            if let imageUrl = home.imageUrls.first,
-               let url = URL(string: imageUrl),
-               let imageData = try? Data(contentsOf: url),
-               let image = UIImage(data: imageData) {
-                itemsToShare.insert(image, at: 0) // Add image first
+            // Generate composite share image with text overlay
+            print("🎨 Starting to create composite share image...")
+            if let shareImage = await createShareImage() {
+                print("✅ Composite image created! Size: \(shareImage.size)")
+
+                // Save to temporary file
+                if let imageData = shareImage.jpegData(compressionQuality: 0.9) {
+                    print("✅ Image converted to JPEG: \(imageData.count) bytes")
+
+                    let tempDir = FileManager.default.temporaryDirectory
+                    let fileName = "housers-share-\(UUID().uuidString).jpg"
+                    let fileURL = tempDir.appendingPathComponent(fileName)
+
+                    do {
+                        try imageData.write(to: fileURL)
+                        print("✅ Saved composite image to: \(fileURL.path)")
+                        itemsToShare.append(fileURL)
+                    } catch {
+                        print("❌ Failed to save composite: \(error.localizedDescription)")
+                    }
+                } else {
+                    print("❌ Failed to convert composite to JPEG")
+                }
+            } else {
+                print("⚠️ Composite generation failed, using original image")
+                // Fallback to original image
+                if let imageUrl = home.imageUrls.first, let url = URL(string: imageUrl) {
+                    do {
+                        let (data, _) = try await URLSession.shared.data(from: url)
+                        if let image = UIImage(data: data), let jpegData = image.jpegData(compressionQuality: 0.9) {
+                            let tempDir = FileManager.default.temporaryDirectory
+                            let fileURL = tempDir.appendingPathComponent("housers-original-\(UUID().uuidString).jpg")
+                            try jpegData.write(to: fileURL)
+                            itemsToShare.append(fileURL)
+                            print("✅ Using original image as fallback")
+                        }
+                    } catch {
+                        print("❌ Fallback failed: \(error.localizedDescription)")
+                    }
+                }
             }
+
+            // Add text with URL
+            let shareMessage = """
+            Check out this home on Housers!
+
+            \(home.title)
+            \(home.price != nil ? formatPrice(home.price!) : "")
+
+            \(shareURL)
+            """
+            itemsToShare.append(shareMessage)
 
             await MainActor.run {
                 let activityVC = UIActivityViewController(
                     activityItems: itemsToShare,
                     applicationActivities: nil
                 )
+
+                // Add completion handler to dismiss after sharing is done
+                activityVC.completionWithItemsHandler = { activityType, completed, returnedItems, error in
+                    print("📊 Share activity completed: \(completed)")
+                    if let error = error {
+                        print("❌ Share error: \(error.localizedDescription)")
+                    }
+                    if let activityType = activityType {
+                        print("✅ Shared via: \(activityType.rawValue)")
+                    }
+
+                    // Dismiss the parent share sheet
+                    DispatchQueue.main.async {
+                        dismiss()
+                    }
+                }
 
                 if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                    let rootVC = windowScene.windows.first?.rootViewController {
@@ -437,8 +647,6 @@ struct ShareSheet: View {
                     }
                     topController.present(activityVC, animated: true)
                 }
-
-                dismiss()
             }
         }
     }

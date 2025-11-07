@@ -492,6 +492,9 @@ struct CreatePostView: View {
                         }
                     }
 
+                    // MARK: - OPEN HOUSE SECTION (TEMPORARILY HIDDEN FOR APP STORE SUBMISSION)
+                    // TODO: Uncomment this section when ready to re-enable Open House feature
+                    /*
                     // Open House Section
                     VStack(alignment: .leading, spacing: 12) {
                         Divider()
@@ -603,6 +606,7 @@ struct CreatePostView: View {
                             .padding(.leading, 8)
                         }
                     }
+                    */
 
                     // Post button
                     Button(action: editingHome == nil ? createPost : updatePost) {

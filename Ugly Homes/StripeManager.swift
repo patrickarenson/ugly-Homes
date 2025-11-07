@@ -14,7 +14,7 @@ class StripeManager: ObservableObject {
 
     // MARK: - Configuration
     // Set to false for production, true for testing
-    private let useTestMode = true  // Using test mode for development
+    private let useTestMode = false  // LIVE MODE for App Store production
     // Stripe publishable keys for Ugly Homes
     private let livePublishableKey = "pk_live_51IQ4KFINuCqfox5ANOT1zQgE5WDR8mDAKixO5wP80hu6CgHLbi6zi04tDBW8WiYPhYlBOPZYcmOIWIXzPiGXvC5H00GUzwaHNw"
     private let testPublishableKey = "pk_test_51IQ4KFINuCqfox5Aw7pPA1TcK2kTYve8mB2wm7zo13detBUg6c1eeZgnrWa8yKil1tZjvkH5i9ZjLbDlyQas63eJ00Hg9v0Hbq"

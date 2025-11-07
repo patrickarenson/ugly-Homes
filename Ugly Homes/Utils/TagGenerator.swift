@@ -121,7 +121,13 @@ struct TagGenerator {
            text.contains("as is") ||
            text.contains("investment property") ||
            text.contains("investor special") ||
-           text.contains("roi")) {
+           text.contains("roi") ||
+           text.contains("under renovation") ||
+           text.contains("under construction") ||
+           text.contains("completion in") ||
+           text.contains("expected completion") ||
+           text.contains("renovation") && text.contains("months") ||
+           text.contains("construction") && text.contains("timeline")) {
             tags.append("#CashFlow")
         }
 
@@ -488,6 +494,23 @@ struct TagGenerator {
            text.contains("must sell") ||
            text.contains("reduced") {
             tags.append("#BelowMarket")
+        }
+
+        // Motivated Seller (deal-seeker tag - seller urgency/flexibility)
+        if text.contains("bring all offers") ||
+           text.contains("all offers") ||
+           text.contains("motivated seller") ||
+           text.contains("must sell") ||
+           text.contains("owner financing") ||
+           text.contains("flexible terms") ||
+           text.contains("price reduction") ||
+           text.contains("price reduced") ||
+           text.contains("recently reduced") ||
+           text.contains("just reduced") ||
+           text.contains("make an offer") ||
+           text.contains("open to offers") ||
+           text.contains("accepting offers") {
+            tags.append("#MotivatedSeller")
         }
 
         // Potential (shared investor tag)

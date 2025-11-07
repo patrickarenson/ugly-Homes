@@ -83,17 +83,36 @@ struct MainTabView: View {
             }
         }
         .fullScreenCover(item: $deepLinkedHome) { home in
-            NavigationView {
-                HomePostView(home: home, searchText: $searchText, showSoldOptions: false, preloadedUserId: nil)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarLeading) {
-                            Button("Close") {
-                                deepLinkedHome = nil
-                                deepLinkManager.clearPendingLink()
+            ZStack {
+                ScrollView {
+                    HomePostView(home: home, searchText: $searchText, showSoldOptions: false, preloadedUserId: nil)
+                }
+                .ignoresSafeArea(.all, edges: .bottom)
+
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            deepLinkedHome = nil
+                            deepLinkManager.clearPendingLink()
+                        }) {
+                            HStack {
+                                Text("Close")
+                                    .font(.system(size: 16))
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 16, weight: .semibold))
                             }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.black.opacity(0.6))
+                            .cornerRadius(20)
                         }
+                        .padding(.trailing, 16)
                     }
+                    Spacer()
+                }
+                .padding(.top, 8)
             }
         }
     }

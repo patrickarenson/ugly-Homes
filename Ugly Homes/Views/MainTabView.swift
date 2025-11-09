@@ -37,14 +37,16 @@ struct MainTabView: View {
                 }
                 .tag(2)
 
-            MessagesView()
-                .environmentObject(unreadManager)
-                .tabItem {
-                    Image(systemName: "paperplane.fill")
-                        .padding(.top, 10)
-                }
-                .badge(unreadManager.totalUnreadCount)
-                .tag(3)
+            // Messages tab - COMMENTED OUT for App Store submission
+            // TODO: Re-enable once fully tested
+//            MessagesView()
+//                .environmentObject(unreadManager)
+//                .tabItem {
+//                    Image(systemName: "paperplane.fill")
+//                        .padding(.top, 10)
+//                }
+//                .badge(unreadManager.totalUnreadCount)
+//                .tag(3)
 
             NavigationView {
                 ProfileView()
@@ -53,7 +55,7 @@ struct MainTabView: View {
                 Image(systemName: "person.circle.fill")
                     .padding(.top, 10)
                 }
-                .tag(4)
+                .tag(3)
         }
         .accentColor(.orange)
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SearchByTag"))) { notification in

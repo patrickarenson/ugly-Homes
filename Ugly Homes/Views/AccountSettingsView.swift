@@ -26,6 +26,7 @@ struct AccountSettingsView: View {
     @State private var isMigratingTags = false
     @State private var migrationMessage = ""
     @State private var isAdmin = false
+    @State private var showTermsOfService = false
 
     var body: some View {
         NavigationView {
@@ -172,6 +173,25 @@ struct AccountSettingsView: View {
                     }
                 }
 
+                // Legal section
+                Section {
+                    Button(action: {
+                        showTermsOfService = true
+                    }) {
+                        HStack {
+                            Image(systemName: "doc.text")
+                            Text("Terms of Service")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .foregroundColor(.primary)
+                } header: {
+                    Text("Legal")
+                }
+
                 // Delete account section
                 Section {
                     Button(action: {
@@ -239,6 +259,12 @@ struct AccountSettingsView: View {
                 }
             } message: {
                 Text("This will permanently delete your account and all your posts, likes, comments, and messages. This action cannot be undone.\n\nType DELETE to confirm.")
+            }
+            .sheet(isPresented: $showTermsOfService) {
+                TermsOfServiceView(agreedToTerms: .constant(true)) {
+                    // Just dismiss - user already agreed
+                    showTermsOfService = false
+                }
             }
         }
     }

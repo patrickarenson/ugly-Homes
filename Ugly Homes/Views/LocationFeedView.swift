@@ -105,28 +105,29 @@ struct LocationFeedView: View {
             VStack(spacing: 0) {
                 // Header bar (search bar only shows in list view)
                 HStack(spacing: 12) {
-                    // Open House List button (left side)
-                    Button(action: {
-                        showOpenHouseList = true
-                    }) {
-                        ZStack(alignment: .topTrailing) {
-                            Image(systemName: "signpost.right.fill")
-                                .font(.system(size: 24))
-                                .foregroundColor(.green)
-
-                            // Badge showing count of NEW upcoming open houses
-                            if upcomingOpenHouses.count > lastViewedOpenHouseCount {
-                                Text("\(upcomingOpenHouses.count - lastViewedOpenHouseCount)")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 2)
-                                    .background(Color.red)
-                                    .clipShape(Circle())
-                                    .offset(x: 8, y: -8)
-                            }
-                        }
-                    }
+                    // Open House List button - COMMENTED OUT for App Store submission
+                    // TODO: Re-enable once fully tested
+//                    Button(action: {
+//                        showOpenHouseList = true
+//                    }) {
+//                        ZStack(alignment: .topTrailing) {
+//                            Image(systemName: "signpost.right.fill")
+//                                .font(.system(size: 24))
+//                                .foregroundColor(.green)
+//
+//                            // Badge showing count of NEW upcoming open houses
+//                            if upcomingOpenHouses.count > lastViewedOpenHouseCount {
+//                                Text("\(upcomingOpenHouses.count - lastViewedOpenHouseCount)")
+//                                    .font(.system(size: 10, weight: .bold))
+//                                    .foregroundColor(.white)
+//                                    .padding(.horizontal, 4)
+//                                    .padding(.vertical, 2)
+//                                    .background(Color.red)
+//                                    .clipShape(Circle())
+//                                    .offset(x: 8, y: -8)
+//                            }
+//                        }
+//                    }
 
                     // Search bar - only show in list view
                     if !showMapView {
@@ -228,6 +229,7 @@ struct LocationFeedView: View {
                                 LazyVStack(spacing: 0) {
                                     ForEach(filteredHomes) { home in
                                         HomePostView(home: home, searchText: $searchText)
+                                            .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)")
                                             .padding(.bottom, 16)
                                     }
                                 }
@@ -250,6 +252,7 @@ struct LocationFeedView: View {
                 NavigationView {
                     ScrollView {
                         HomePostView(home: home, searchText: $searchText)
+                            .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)")
                     }
                     .navigationTitle("Property")
                     .navigationBarTitleDisplayMode(.inline)
@@ -532,34 +535,38 @@ struct PropertyMapView: View {
                 )
                 .shadow(radius: 3)
         } else {
-            // Property pin - green for Open House, orange for regular
-            Button(action: {
-                if let home = annotation.home {
-                    selectedHome = home
+            // Property pin - purple for rentals, orange for sales
+            VStack(spacing: 0) {
+                // Price tag
+                if let home = annotation.home, let price = home.price {
+                    let isRental = home.listingType?.lowercased() == "rental" || home.listingType == "For Rent"
+                    Text("$\(formatPrice(price))")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(isRental ? Color.purple : Color.orange)
+                        .cornerRadius(8)
                 }
-            }) {
-                VStack(spacing: 0) {
-                    // Price tag
-                    if let home = annotation.home, let price = home.price {
-                        Text("$\(formatPrice(price))")
-                            .font(.caption2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.orange)
-                            .cornerRadius(8)
-                    }
 
-                    // Pin
+                // Pin
+                if let home = annotation.home {
+                    let isRental = home.listingType?.lowercased() == "rental" || home.listingType == "For Rent"
                     Image(systemName: "mappin.circle.fill")
                         .font(.title)
-                        .foregroundColor(.orange)
+                        .foregroundColor(isRental ? .purple : .orange)
                         .background(
                             Circle()
                                 .fill(Color.white)
                                 .frame(width: 20, height: 20)
                         )
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if let home = annotation.home {
+                    selectedHome = home
                 }
             }
         }

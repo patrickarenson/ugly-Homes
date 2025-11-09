@@ -95,7 +95,7 @@ struct CreatePostView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    // URL Import Section (only show when creating new property)
+                    // Quick Import from Zillow
                     if editingHome == nil {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Quick Import")
@@ -105,7 +105,7 @@ struct CreatePostView: View {
                                 .foregroundColor(.gray)
 
                             HStack {
-                                TextField("Paste Zillow URL here", text: $listingURL)
+                                TextField("Paste listing URL here", text: $listingURL)
                                     .padding()
                                     .background(Color(.systemGray6))
                                     .cornerRadius(8)
@@ -127,14 +127,9 @@ struct CreatePostView: View {
                             }
 
                             // Import status/error message
-                            if !errorMessage.isEmpty && errorMessage.contains("Cannot connect") {
+                            if !errorMessage.isEmpty {
                                 Text(errorMessage)
-                                    .foregroundColor(.red)
-                                    .font(.caption)
-                                    .padding(.top, 4)
-                            } else if !errorMessage.isEmpty {
-                                Text(errorMessage)
-                                    .foregroundColor(errorMessage.contains("✅") ? .green : .red)
+                                    .foregroundColor(errorMessage.contains("✅") ? .green : .orange)
                                     .font(.caption)
                                     .padding(.top, 4)
                             }
@@ -656,50 +651,90 @@ struct CreatePostView: View {
         }
     }
 
+    // Validate if URL is from supported real estate sites
+    func isValidListingURL(_ urlString: String) -> Bool {
+        let lowercased = urlString.lowercased()
+        return lowercased.contains("zillow.com") ||
+               lowercased.contains("realtor.com") ||
+               lowercased.contains("redfin.com") ||
+               lowercased.contains("trulia.com")
+    }
+
     func importFromURL() {
-        guard !listingURL.isEmpty else { return }
+        print("⭐️ IMPORT BUTTON TAPPED - URL: \(listingURL)")
+        guard !listingURL.isEmpty else {
+            print("❌ URL is empty")
+            return
+        }
+
+        // Validate URL format
+        guard let url = URL(string: listingURL), url.scheme != nil else {
+            print("❌ Invalid URL format")
+            errorMessage = "⚠️ Please enter a valid URL"
+            return
+        }
+
+        // Validate it's from Zillow
+        guard listingURL.lowercased().contains("zillow.com") else {
+            print("❌ Not a Zillow URL")
+            errorMessage = "⚠️ Please use a Zillow URL"
+            return
+        }
+
         errorMessage = ""
         isImporting = true
 
         Task {
-            do {
-                print("🔄 Starting import from URL: \(listingURL)")
+            // Retry logic: try up to 3 times
+            var attempt = 0
+            var lastError: Error?
 
-                // Call the optional scraping API for auto-import
-                // NOTE: This is optional - if unavailable, users can fill form manually
-                // To update IP: Open Config.swift and change developmentIP
-                let apiEndpoint = APIConfig.scrapingAPIEndpoint
-
-                guard let apiURL = URL(string: apiEndpoint) else {
-                    throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Quick import is taking a break - just add your listing below!"])
-                }
-
-                var request = URLRequest(url: apiURL)
-                request.httpMethod = "POST"
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.timeoutInterval = 30 // 30 second timeout - allows time for photo fetching
-
-                let body = ["url": listingURL]
-                request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-                print("📡 Sending request to scraping API...")
-                let (data, response) = try await URLSession.shared.data(for: request)
-
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Quick import is busy - add your listing below!"])
-                }
-
-                print("📥 Received response with status code: \(httpResponse.statusCode)")
-
-                if httpResponse.statusCode != 200 {
-                    // Try to parse error message from response
-                    if let errorResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let errorMsg = errorResponse["error"] as? String {
-                        throw NSError(domain: "ImportError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "🤔 \(errorMsg) - just add your details below!"])
-                    } else {
-                        throw NSError(domain: "ImportError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "📈 Quick import is experiencing high demand - add your listing below!"])
+            while attempt < 3 {
+                do {
+                    attempt += 1
+                    if attempt > 1 {
+                        print("🔄 Retry attempt \(attempt)/3...")
+                        errorMessage = "Retrying... (attempt \(attempt)/3)"
+                        try? await Task.sleep(nanoseconds: 2_000_000_000) // Wait 2 seconds between retries
                     }
-                }
+
+                    print("🔄 Starting import from URL: \(listingURL)")
+
+                    // Call the scraping API
+                    let apiEndpoint = APIConfig.scrapingAPIEndpoint
+
+                    guard let apiURL = URL(string: apiEndpoint) else {
+                        throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Quick import unavailable - please fill form manually"])
+                    }
+
+                    var request = URLRequest(url: apiURL)
+                    request.httpMethod = "POST"
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.timeoutInterval = 30 // 30 second timeout
+
+                    let body = ["url": listingURL]
+                    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+                    print("📡 Sending request to scraping API (attempt \(attempt))...")
+                    print("🌐 API URL: \(apiEndpoint)")
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    print("✅ Got response from API")
+
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Quick import unavailable"])
+                    }
+
+                    print("📥 Received response with status code: \(httpResponse.statusCode)")
+
+                    if httpResponse.statusCode != 200 {
+                        // Try to parse error message from response
+                        if let errorResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let errorMsg = errorResponse["error"] as? String {
+                            throw NSError(domain: "ImportError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errorMsg])
+                        } else {
+                            throw NSError(domain: "ImportError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server returned error \(httpResponse.statusCode)"])
+                        }
+                    }
 
                 struct ScrapedListing: Codable {
                     let price: String?
@@ -759,8 +794,12 @@ struct CreatePostView: View {
                     print("🚿 Bathrooms: \(baths)")
                 }
                 if let desc = scraped.description, !desc.isEmpty {
-                    self.description = desc
+                    // Add source attribution for copyright compliance
+                    self.description = desc + "\n\n📋 Listing data via Zillow"
                     fieldsPopulated += 1
+                } else {
+                    // Add attribution even if no description
+                    self.description = "📋 Listing data via Zillow"
                 }
                 if let images = scraped.images, !images.isEmpty {
                     self.imageUrls = images
@@ -775,45 +814,56 @@ struct CreatePostView: View {
                     print("🏠 Listing type: \(type)")
                 }
 
-                isImporting = false
+                    // Success! Show results and break out of retry loop
+                    isImporting = false
 
-                if fieldsPopulated > 0 {
-                    errorMessage = "✅ Successfully imported \(fieldsPopulated) field(s)!"
-                    print("✅ Successfully imported listing data - \(fieldsPopulated) fields populated")
+                    if fieldsPopulated > 0 {
+                        errorMessage = "✅ Successfully imported \(fieldsPopulated) field(s)!"
+                        print("✅ Successfully imported listing data - \(fieldsPopulated) fields populated")
 
-                    // Clear success message after 3 seconds
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        if self.errorMessage.contains("Successfully") {
-                            self.errorMessage = ""
+                        // Clear success message after 4 seconds
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                            if self.errorMessage.contains("Successfully") {
+                                self.errorMessage = ""
+                            }
+                        }
+                    } else {
+                        errorMessage = "⚠️ No data found - please fill out the form manually"
+                        print("⚠️ No data was extracted from the listing")
+                    }
+
+                    return // Exit the Task - success!
+
+                } catch let error as NSError {
+                    print("⚠️ Import attempt \(attempt) failed: \(error.localizedDescription)")
+                    lastError = error
+
+                    // If this was the last attempt, show error
+                    if attempt >= 3 {
+                        isImporting = false
+
+                        // Friendly error messages based on error type
+                        if error.domain == NSURLErrorDomain && error.code == NSURLErrorCannotConnectToHost {
+                            errorMessage = "⚠️ Cannot connect to import server - please check your internet or fill form manually"
+                        } else if error.domain == NSURLErrorDomain && error.code == NSURLErrorTimedOut {
+                            errorMessage = "⚠️ Import timed out - try again or fill form manually"
+                        } else if error.localizedDescription.contains("unavailable") {
+                            errorMessage = "⚠️ Import server is unavailable - please fill form manually"
+                        } else {
+                            errorMessage = "⚠️ Import failed - \(error.localizedDescription)"
+                        }
+
+                        print("❌ All retry attempts failed. User should fill form manually.")
+
+                        // Auto-dismiss error after 6 seconds
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                            if self.errorMessage.contains("Import") || self.errorMessage.contains("failed") {
+                                self.errorMessage = ""
+                            }
                         }
                     }
-                } else {
-                    errorMessage = "🤔 Couldn't read that listing - no worries, just add your details below!"
-                    print("⚠️ No data was extracted from the listing")
+                    // Otherwise, continue to next retry attempt
                 }
-
-            } catch let error as NSError {
-                print("⚠️ Import failed (non-critical): \(error.localizedDescription)")
-
-                // Friendly error message - import is optional
-                if error.domain == NSURLErrorDomain && error.code == NSURLErrorCannotConnectToHost {
-                    errorMessage = "📈 We're growing fast! Quick import is taking a break - just fill out the form below"
-                } else if error.domain == NSURLErrorDomain && error.code == NSURLErrorTimedOut {
-                    errorMessage = "📈 High demand right now! Fill out the form below while our servers catch up"
-                } else {
-                    errorMessage = "✨ Quick import is busy - no worries, just add your listing details below!"
-                }
-
-                print("ℹ️ User can continue posting manually")
-
-                // Auto-dismiss error after 5 seconds so it doesn't block the user
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                    if self.errorMessage.contains("Import") {
-                        self.errorMessage = ""
-                    }
-                }
-
-                isImporting = false
             }
         }
     }
@@ -834,6 +884,50 @@ struct CreatePostView: View {
             do {
                 let userId = try await SupabaseManager.shared.client.auth.session.user.id
                 print("📤 Creating post for user: \(userId)")
+
+                // CONTENT MODERATION - Check text content before proceeding
+                print("🛡️ Running content moderation...")
+                let titleToCheck = !address.isEmpty ? address : (!price.isEmpty ? "$\(price) \(listingType.rawValue)" : listingType.rawValue)
+                let moderationResult = ContentModerationManager.shared.moderatePost(
+                    title: titleToCheck,
+                    description: description.isEmpty ? nil : description
+                )
+
+                var requiresReview = false
+                var moderationReason: String? = nil
+
+                switch moderationResult {
+                case .blocked(let reason):
+                    // Stop post creation - content is prohibited
+                    await MainActor.run {
+                        isUploading = false
+                        errorMessage = "Post blocked: \(reason). Please review our content policy and remove any offensive or inappropriate content."
+                    }
+                    print("🚫 Post blocked: \(reason)")
+                    return
+
+                case .flaggedForReview(let reason, _):
+                    // Allow post but flag for manual review
+                    requiresReview = true
+                    moderationReason = reason
+                    print("⚠️ Post flagged for review: \(reason)")
+
+                case .approved:
+                    print("✅ Content approved")
+                }
+
+                // IMAGE VALIDATION - Check all images
+                for (index, data) in imageData.enumerated() {
+                    let validation = ContentModerationManager.shared.validateImage(data, filename: "image_\(index).jpg")
+                    if !validation.isValid {
+                        await MainActor.run {
+                            isUploading = false
+                            errorMessage = validation.error ?? "Invalid image"
+                        }
+                        print("🚫 Image validation failed: \(validation.error ?? "Unknown error")")
+                        return
+                    }
+                }
 
                 // Upload images to Supabase Storage (if manually selected)
                 var finalImageUrls: [String] = imageUrls // Start with scraped URLs if any
@@ -922,6 +1016,8 @@ struct CreatePostView: View {
                     let image_urls: [String]
                     let tags: [String]
                     let is_active: Bool
+                    let requires_review: Bool?
+                    let moderation_reason: String?
                     let open_house_date: Date?
                     let open_house_end_date: Date?
                     let open_house_paid: Bool?
@@ -944,6 +1040,8 @@ struct CreatePostView: View {
                     image_urls: finalImageUrls,
                     tags: generatedTags,
                     is_active: true,
+                    requires_review: requiresReview ? true : nil,
+                    moderation_reason: moderationReason,
                     open_house_date: (enableOpenHouse && hasOpenHousePaid) ? openHouseDate : nil,
                     open_house_end_date: (enableOpenHouse && hasOpenHousePaid) ? openHouseEndDate : nil,
                     open_house_paid: (enableOpenHouse && hasOpenHousePaid) ? true : nil,

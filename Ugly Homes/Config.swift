@@ -15,13 +15,15 @@ struct APIConfig {
     private static let developmentIP = "10.2.224.251" // UPDATE THIS when your IP changes
     private static let developmentPort = "3000"
 
-    // For production, use your deployed server
-    private static let productionURL = "https://your-api.com" // TODO: Set production URL
+    // Production URL - Custom domain for realtordocs API
+    private static let productionURL = "https://api.housers.us"
 
-    // Automatically use production URL if available, otherwise development
+    // Automatically use production URL for Release builds, development for Debug
     static var scrapingAPIBaseURL: String {
         #if DEBUG
-        return "http://\(developmentIP):\(developmentPort)"
+        // TEMPORARY: Using production URL in debug mode since local server isn't running
+        return productionURL
+        // return "http://\(developmentIP):\(developmentPort)"
         #else
         return productionURL
         #endif

@@ -185,7 +185,9 @@ struct NotificationRowContent: View {
     let notification: AppNotification
     let triggeredByUserId: UUID?
     @State private var navigateToProfile = false
-    @State private var postImageUrl: String?
+    @State private var navigateToPost = false
+    @State private var post: Home?
+    @State private var currentUserId: UUID?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -211,34 +213,43 @@ struct NotificationRowContent: View {
                     .foregroundColor(.gray)
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            // Post thumbnail
-            if let imageUrl = postImageUrl {
-                AsyncImage(url: URL(string: imageUrl)) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 50, height: 50)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                } placeholder: {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(width: 50, height: 50)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+            // Right-aligned: Post thumbnail + Unread indicator
+            HStack(spacing: 8) {
+                // Post thumbnail - clickable to navigate to post
+                if let post = post, let imageUrl = post.imageUrls.first {
+                    Button(action: {
+                        navigateToPost = true
+                    }) {
+                        AsyncImage(url: URL(string: imageUrl)) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 50, height: 50)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        } placeholder: {
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(width: 50, height: 50)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
-            }
 
-            // Unread indicator
-            if !notification.isRead {
-                Circle()
-                    .fill(Color.orange)
-                    .frame(width: 10, height: 10)
+                // Unread indicator
+                if !notification.isRead {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 10, height: 10)
+                }
             }
         }
         .padding(.vertical, 8)
         .background(
             Group {
+                // Hidden navigation links
                 if let userId = triggeredByUserId {
                     NavigationLink(
                         destination: ProfileView(viewingUserId: userId),
@@ -248,40 +259,55 @@ struct NotificationRowContent: View {
                     }
                     .hidden()
                 }
+
+                if let post = post {
+                    NavigationLink(
+                        destination: PostDetailView(home: post, showSoldOptions: false, preloadedUserId: currentUserId),
+                        isActive: $navigateToPost
+                    ) {
+                        EmptyView()
+                    }
+                    .hidden()
+                }
             }
         )
         .onAppear {
-            loadPostImage()
+            loadPost()
+            loadCurrentUserId()
         }
     }
 
-    func loadPostImage() {
+    func loadPost() {
         guard let homeId = notification.homeId else { return }
 
         Task {
             do {
-                struct HomeImage: Codable {
-                    let imageUrls: [String]
-
-                    enum CodingKeys: String, CodingKey {
-                        case imageUrls = "image_urls"
-                    }
-                }
-
-                let response: [HomeImage] = try await SupabaseManager.shared.client
+                // Load full home object with profile data
+                let response: [Home] = try await SupabaseManager.shared.client
                     .from("homes")
-                    .select("image_urls")
+                    .select("*, profile:user_id(*)")
                     .eq("id", value: homeId.uuidString)
                     .execute()
                     .value
 
-                if let firstUrl = response.first?.imageUrls.first {
-                    await MainActor.run {
-                        postImageUrl = firstUrl
-                    }
+                await MainActor.run {
+                    post = response.first
                 }
             } catch {
-                print("❌ Error loading post image: \(error)")
+                print("❌ Error loading post: \(error)")
+            }
+        }
+    }
+
+    func loadCurrentUserId() {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+                await MainActor.run {
+                    currentUserId = userId
+                }
+            } catch {
+                print("❌ Error loading current user ID: \(error)")
             }
         }
     }

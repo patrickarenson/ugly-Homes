@@ -15,8 +15,8 @@ struct Profile: Codable, Identifiable {
     var bio: String?
     var market: String?
     var isVerified: Bool?
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date?
+    var updatedAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id

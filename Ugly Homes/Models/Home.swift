@@ -30,6 +30,8 @@ struct Home: Codable, Identifiable {
     var isActive: Bool
     var isArchived: Bool?
     var archivedAt: Date?
+    var requiresReview: Bool?
+    var moderationReason: String?
     var soldStatus: String?
     var soldDate: Date?
     var openHouseDate: Date?
@@ -68,6 +70,8 @@ struct Home: Codable, Identifiable {
         case isActive = "is_active"
         case isArchived = "is_archived"
         case archivedAt = "archived_at"
+        case requiresReview = "requires_review"
+        case moderationReason = "moderation_reason"
         case soldStatus = "sold_status"
         case soldDate = "sold_date"
         case openHouseDate = "open_house_date"

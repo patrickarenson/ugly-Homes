@@ -15,6 +15,7 @@ struct Ugly_HomesApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(deepLinkManager)
+                .preferredColorScheme(.light) // Force light mode - dark mode not yet supported
                 .onOpenURL { url in
                     // Handle deep links when app opens via URL
                     deepLinkManager.handleURL(url)

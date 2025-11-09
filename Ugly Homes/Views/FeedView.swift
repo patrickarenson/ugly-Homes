@@ -107,7 +107,7 @@ struct FeedView: View {
                     .background(Color(.systemGray6))
                     .cornerRadius(12)
 
-                    // Notifications button with badge
+                    // Notifications button
                     Button(action: {
                         showNotifications = true
                     }) {
@@ -194,9 +194,12 @@ struct FeedView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(filteredHomes) { home in
-                                HomePostView(home: home, searchText: $searchText)
-                                    .padding(.bottom, 16)
+                            if !filteredHomes.isEmpty {
+                                ForEach(filteredHomes) { home in
+                                    HomePostView(home: home, searchText: $searchText)
+                                        .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)")
+                                        .padding(.bottom, 16)
+                                }
                             }
                         }
                     }
@@ -276,7 +279,7 @@ struct FeedView: View {
                     .execute()
                     .value
 
-                print("✅ Database search returned \(response.count) total results")
+                print("✅ Database search returned \(response.count) total post results")
 
                 await MainActor.run {
                     searchResults = response
@@ -502,6 +505,12 @@ struct FeedView: View {
                     }
                 }
 
+                // DEBUG: Print sold status for all homes
+                print("🔍 SOLD STATUS CHECK - Loaded \(sortedHomes.count) homes:")
+                for home in sortedHomes.prefix(5) {
+                    print("   📍 \(home.title): soldStatus='\(home.soldStatus ?? "nil")'")
+                }
+
                 // Print trending scores for debugging
                 print("===== TRENDING SCORES =====")
                 for (index, homeResponse) in response.prefix(5).enumerated() {
@@ -579,6 +588,15 @@ struct HomePostView: View {
     @State private var isOpenHouseSaved = false
     @State private var showOpenHouseSavedMessage = false
 
+    // Moderation features
+    @State private var showReportDialog = false
+    @State private var showBlockAlert = false
+    @State private var showHideAlert = false
+    @State private var showReportConfirmation = false
+    @State private var showBlockConfirmation = false
+    @State private var showHideConfirmation = false
+    @State private var reportReason = ""
+
     init(home: Home, searchText: Binding<String>, showSoldOptions: Bool = true, preloadedUserId: UUID? = nil) {
         self.home = home
         self._searchText = searchText
@@ -589,6 +607,9 @@ struct HomePostView: View {
         _soldStatus = State(initialValue: home.soldStatus)
         _soldDate = State(initialValue: home.soldDate)
         _currentUserId = State(initialValue: preloadedUserId)
+
+        // DEBUG: Log initialization
+        print("🏗️ HomePostView INIT - \(home.title): soldStatus='\(home.soldStatus ?? "nil")', id=\(home.id)")
     }
 
     var body: some View {
@@ -631,6 +652,7 @@ struct HomePostView: View {
                             )
                     }
                 }
+                .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 4) {
                     // Line 1: Username + badges
@@ -647,6 +669,7 @@ struct HomePostView: View {
                                 }
                             }
                         }
+                        .buttonStyle(.plain)
 
                         // Sold/Leased/Pending badge
                         if let status = soldStatus {
@@ -657,7 +680,7 @@ struct HomePostView: View {
                                 .padding(.vertical, 2)
                                 .background(
                                     status == "sold" ? Color.red :
-                                    status == "leased" ? Color.blue :
+                                    status == "leased" ? Color.purple :
                                     status == "pending" ? Color.yellow : Color.gray
                                 )
                                 .cornerRadius(4)
@@ -693,14 +716,12 @@ struct HomePostView: View {
 
                 Spacer()
 
-                // Only show menu button if current user owns the post
-                if currentUserId == home.userId {
-                    Button(action: {
-                        showMenu = true
-                    }) {
-                        Image(systemName: "ellipsis")
-                            .foregroundColor(.black)
-                    }
+                // Always show menu button (options differ based on post ownership)
+                Button(action: {
+                    showMenu = true
+                }) {
+                    Image(systemName: "ellipsis")
+                        .foregroundColor(.black)
                 }
             }
             .padding(.horizontal)
@@ -766,54 +787,55 @@ struct HomePostView: View {
                                 .opacity(showHeartAnimation ? 1.0 : 0.0)
                         }
 
-                        // Calendar button overlay (top-right) - only for open houses
-                        if let openHouseDate = home.openHouseDate, home.openHousePaid == true {
-                            let endDate = home.openHouseEndDate ?? openHouseDate.addingTimeInterval(7200)
-                            if endDate > Date() {
-                                VStack {
-                                    HStack {
-                                        Spacer()
-                                        Button(action: {
-                                            toggleOpenHouseSaved()
-                                        }) {
-                                            Image(systemName: isOpenHouseSaved ? "calendar.badge.checkmark" : "calendar.badge.plus")
-                                                .font(.system(size: 28))
-                                                .foregroundColor(.white)
-                                                .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
-                                                .padding(12)
-                                                .background(
-                                                    Circle()
-                                                        .fill(isOpenHouseSaved ? Color.green.opacity(0.9) : Color.green.opacity(0.7))
-                                                )
-                                        }
-                                        .padding(.trailing, 12)
-                                        .padding(.top, 12)
-                                    }
-                                    Spacer()
-                                }
-                            }
-                        }
+                        // Calendar button overlay - COMMENTED OUT for App Store submission
+                        // TODO: Re-enable once fully tested
+//                        if let openHouseDate = home.openHouseDate, home.openHousePaid == true {
+//                            let endDate = home.openHouseEndDate ?? openHouseDate.addingTimeInterval(7200)
+//                            if endDate > Date() {
+//                                VStack {
+//                                    HStack {
+//                                        Spacer()
+//                                        Button(action: {
+//                                            toggleOpenHouseSaved()
+//                                        }) {
+//                                            Image(systemName: isOpenHouseSaved ? "calendar.badge.checkmark" : "calendar.badge.plus")
+//                                                .font(.system(size: 28))
+//                                                .foregroundColor(.white)
+//                                                .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+//                                                .padding(12)
+//                                                .background(
+//                                                    Circle()
+//                                                        .fill(isOpenHouseSaved ? Color.green.opacity(0.9) : Color.green.opacity(0.7))
+//                                                )
+//                                        }
+//                                        .padding(.trailing, 12)
+//                                        .padding(.top, 12)
+//                                    }
+//                                    Spacer()
+//                                }
+//                            }
+//                        }
                     }
                 }
                 .frame(height: 400)
 
-                // Photo indicator dots - 3 dots: first, middle, last
+                // Photo indicator dots - Progressive sizing (gets smaller to indicate more photos)
                 if home.imageUrls.count > 1 {
                     HStack(spacing: 5) {
-                        // First dot
-                        Circle()
-                            .fill(currentPhotoIndex == 0 ? Color.orange : Color.gray.opacity(0.5))
-                            .frame(width: 7, height: 7)
-
-                        // Middle dot
-                        Circle()
-                            .fill((currentPhotoIndex > 0 && currentPhotoIndex < home.imageUrls.count - 1) ? Color.orange : Color.gray.opacity(0.5))
-                            .frame(width: 7, height: 7)
-
-                        // Last dot
-                        Circle()
-                            .fill(currentPhotoIndex == home.imageUrls.count - 1 ? Color.orange : Color.gray.opacity(0.5))
-                            .frame(width: 7, height: 7)
+                        ForEach(0..<min(home.imageUrls.count, 5), id: \.self) { index in
+                            let isActive = currentPhotoIndex == index
+                            let size = getDotSize(for: index, isActive: isActive, totalDots: min(home.imageUrls.count, 5))
+                            Circle()
+                                .fill(isActive ? Color.orange : Color.gray.opacity(0.5))
+                                .frame(width: size, height: size)
+                        }
+                        // Show ellipsis if more than 5 photos
+                        if home.imageUrls.count > 5 {
+                            Text("...")
+                                .font(.system(size: 8))
+                                .foregroundColor(.gray.opacity(0.5))
+                                .offset(y: -2)
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.top, 8)
@@ -854,23 +876,24 @@ struct HomePostView: View {
                     }
                 }
 
-                // Share button
-                Button(action: {
-                    showShareSheet = true
-                }) {
-                    Image(systemName: "paperplane")
-                        .font(.title3)
-                }
+                // Share button - COMMENTED OUT for App Store submission
+                // TODO: Re-enable once fully tested
+                // Button(action: {
+                //     showShareSheet = true
+                // }) {
+                //     Image(systemName: "paperplane")
+                //         .font(.title3)
+                // }
 
-                // Message button (only show if not own post)
-                if let profile = home.profile, let currentId = currentUserId, profile.id != currentId {
-                    Button(action: {
-                        showChat = true
-                    }) {
-                        Image(systemName: "message")
-                            .font(.title3)
-                    }
-                }
+                // Message button - COMMENTED OUT (not requested to be re-enabled)
+                // if let profile = home.profile, let currentId = currentUserId, profile.id != currentId {
+                //     Button(action: {
+                //         showChat = true
+                //     }) {
+                //         Image(systemName: "message")
+                //             .font(.title3)
+                //     }
+                // }
 
                 Spacer()
             }
@@ -1018,6 +1041,19 @@ struct HomePostView: View {
                 Button("Delete Post", role: .destructive) {
                     showDeleteAlert = true
                 }
+            } else {
+                // Moderation options for posts from other users
+                Button("Report Post") {
+                    showReportDialog = true
+                }
+
+                Button("Block User") {
+                    showBlockAlert = true
+                }
+
+                Button("Hide Post") {
+                    showHideAlert = true
+                }
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -1031,6 +1067,66 @@ struct HomePostView: View {
             }
         } message: {
             Text("Are you sure you want to delete this post? This action cannot be undone.")
+        }
+        // Report Post Dialog
+        .confirmationDialog("Report Post", isPresented: $showReportDialog, titleVisibility: .visible) {
+            Button("Spam or Scam") {
+                reportPost(reason: "Spam or Scam")
+            }
+            Button("Harassment or Hate Speech") {
+                reportPost(reason: "Harassment or Hate Speech")
+            }
+            Button("Inappropriate Content") {
+                reportPost(reason: "Inappropriate Content")
+            }
+            Button("Misleading Information") {
+                reportPost(reason: "Misleading Information")
+            }
+            Button("Copyright Infringement") {
+                reportPost(reason: "Copyright Infringement")
+            }
+            Button("Other") {
+                reportPost(reason: "Other")
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Why are you reporting this post? Our moderation team will review all reports within 24 hours. Violating content will be removed and users who violate our community guidelines will be removed from the platform.")
+        }
+        // Block User Alert
+        .alert("Block User", isPresented: $showBlockAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Block", role: .destructive) {
+                blockUser()
+            }
+        } message: {
+            Text("Are you sure you want to block @\(home.profile?.username ?? "this user")? You won't see their posts anymore.")
+        }
+        // Hide Post Alert
+        .alert("Hide Post", isPresented: $showHideAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Hide") {
+                hidePost()
+            }
+        } message: {
+            Text("Hide this post from your feed? You can always undo this later.")
+        }
+        // Report Confirmation Alert
+        .alert("Report Submitted", isPresented: $showReportConfirmation) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Thank you for your report. Our moderation team will review this content within 24 hours and take appropriate action.")
+        }
+        // Block Confirmation Alert
+        .alert("User Blocked", isPresented: $showBlockConfirmation) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("You have successfully blocked this user. You won't see their posts anymore.")
+        }
+        // Hide Confirmation Alert
+        .alert("Post Hidden", isPresented: $showHideConfirmation) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("This post has been hidden from your feed.")
         }
         .overlay(
             Group {
@@ -1293,11 +1389,13 @@ struct HomePostView: View {
                 struct SoldStatusUpdate: Encodable {
                     let sold_status: String
                     let sold_date: Date
+                    let updated_at: Date
                 }
 
                 let update = SoldStatusUpdate(
                     sold_status: status,
-                    sold_date: Date()
+                    sold_date: Date(),
+                    updated_at: Date()
                 )
 
                 print("🔧 Sending update to Supabase...")
@@ -1307,17 +1405,17 @@ struct HomePostView: View {
                     .eq("id", value: home.id.uuidString)
                     .execute()
 
-                // Update local state
-                await MainActor.run {
-                    soldStatus = status
-                    soldDate = Date()
-                    print("✅ Local state updated - soldStatus: \(status)")
-                }
-
                 print("✅ Post marked as \(status)")
 
-                // Post notification to refresh profile
-                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshProfile"), object: nil)
+                // Wait for database to propagate before refreshing
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
+                // Post notifications to refresh feed and profile on main thread
+                await MainActor.run {
+                    print("🔄 Posting refresh notifications...")
+                    Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshFeed"), object: nil)
+                    Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshProfile"), object: nil)
+                }
             } catch {
                 print("❌ Error marking post as \(status): \(error)")
             }
@@ -1335,32 +1433,192 @@ struct HomePostView: View {
                     return
                 }
 
+                print("🔧 BEFORE UPDATE - Current badge status: \(soldStatus ?? "nil")")
+                print("🔧 Updating home ID: \(home.id.uuidString)")
+
+                // CRITICAL FIX: Custom encodable that explicitly encodes nil as JSON null
                 struct SoldStatusUpdate: Encodable {
                     let sold_status: String?
-                    let sold_date: Date?
+                    let sold_date: String?
+                    let updated_at: Date
+
+                    func encode(to encoder: Encoder) throws {
+                        var container = encoder.container(keyedBy: CodingKeys.self)
+                        // Explicitly encode nil as null (not omit the key)
+                        try container.encode(sold_status, forKey: .sold_status)
+                        try container.encode(sold_date, forKey: .sold_date)
+                        try container.encode(updated_at, forKey: .updated_at)
+                    }
+
+                    enum CodingKeys: String, CodingKey {
+                        case sold_status, sold_date, updated_at
+                    }
                 }
 
                 let update = SoldStatusUpdate(
                     sold_status: nil,
-                    sold_date: nil
+                    sold_date: nil,
+                    updated_at: Date()
                 )
 
-                try await SupabaseManager.shared.client
+                print("🔧 Sending update with explicit NULL values for sold_status and sold_date")
+
+                // Execute update
+                let response = try await SupabaseManager.shared.client
                     .from("homes")
                     .update(update)
                     .eq("id", value: home.id.uuidString)
                     .execute()
 
-                // Update local state
-                soldStatus = nil
-                soldDate = nil
+                print("✅ Database update response received")
+                print("🔧 Response status: \(response.response.statusCode)")
 
-                print("✅ Sold/leased status removed")
+                // Immediately update local state to remove badge
+                await MainActor.run {
+                    soldStatus = nil
+                    soldDate = nil
+                    print("🔧 Local state cleared - soldStatus is now: \(soldStatus ?? "nil")")
+                }
 
-                // Post notification to refresh profile
-                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshProfile"), object: nil)
+                // Wait longer for database to propagate
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+
+                // Post notifications to refresh feed and profile on main thread
+                await MainActor.run {
+                    print("🔄 Posting refresh notifications...")
+                    Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshFeed"), object: nil)
+                    Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshProfile"), object: nil)
+                }
+
+                print("✅ Sold/leased status removed successfully")
             } catch {
                 print("❌ Error removing sold status: \(error)")
+                print("❌ Error details: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    // MARK: - Moderation Functions
+
+    func reportPost(reason: String) {
+        Task {
+            do {
+                guard let reporterId = try? await SupabaseManager.shared.client.auth.session.user.id else {
+                    print("❌ Not authenticated")
+                    return
+                }
+
+                print("📢 Reporting post - Reason: \(reason)")
+
+                struct ReportData: Encodable {
+                    let home_id: String
+                    let reporter_id: String
+                    let reported_user_id: String
+                    let reason: String
+                    let status: String
+                }
+
+                let report = ReportData(
+                    home_id: home.id.uuidString,
+                    reporter_id: reporterId.uuidString,
+                    reported_user_id: home.userId.uuidString,
+                    reason: reason,
+                    status: "pending"
+                )
+
+                try await SupabaseManager.shared.client
+                    .from("reports")
+                    .insert(report)
+                    .execute()
+
+                print("✅ Post reported successfully")
+
+                // Show confirmation message
+                await MainActor.run {
+                    showReportConfirmation = true
+                }
+            } catch {
+                print("❌ Error reporting post: \(error)")
+            }
+        }
+    }
+
+    func blockUser() {
+        Task {
+            do {
+                guard let blockerId = try? await SupabaseManager.shared.client.auth.session.user.id else {
+                    print("❌ Not authenticated")
+                    return
+                }
+
+                print("🚫 Blocking user: @\(home.profile?.username ?? "unknown")")
+
+                struct BlockData: Encodable {
+                    let blocker_id: String
+                    let blocked_id: String
+                }
+
+                let block = BlockData(
+                    blocker_id: blockerId.uuidString,
+                    blocked_id: home.userId.uuidString
+                )
+
+                try await SupabaseManager.shared.client
+                    .from("blocked_users")
+                    .insert(block)
+                    .execute()
+
+                print("✅ User blocked successfully")
+
+                // Show confirmation message
+                await MainActor.run {
+                    showBlockConfirmation = true
+                }
+
+                // Post notification to refresh feed (remove blocked user's posts)
+                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshFeed"), object: nil)
+            } catch {
+                print("❌ Error blocking user: \(error)")
+            }
+        }
+    }
+
+    func hidePost() {
+        Task {
+            do {
+                guard let userId = try? await SupabaseManager.shared.client.auth.session.user.id else {
+                    print("❌ Not authenticated")
+                    return
+                }
+
+                print("👁️ Hiding post")
+
+                struct HideData: Encodable {
+                    let user_id: String
+                    let home_id: String
+                }
+
+                let hide = HideData(
+                    user_id: userId.uuidString,
+                    home_id: home.id.uuidString
+                )
+
+                try await SupabaseManager.shared.client
+                    .from("hidden_posts")
+                    .insert(hide)
+                    .execute()
+
+                print("✅ Post hidden successfully")
+
+                // Show confirmation message
+                await MainActor.run {
+                    showHideConfirmation = true
+                }
+
+                // Post notification to refresh feed (remove hidden post)
+                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshFeed"), object: nil)
+            } catch {
+                print("❌ Error hiding post: \(error)")
             }
         }
     }
@@ -1401,6 +1659,31 @@ struct HomePostView: View {
         formatter.maximumFractionDigits = 0
         let nsDecimal = NSDecimalNumber(decimal: price)
         return "$" + (formatter.string(from: nsDecimal) ?? "\(price)")
+    }
+
+    // Calculate dot size with progressive sizing (dots get smaller to indicate more photos)
+    func getDotSize(for index: Int, isActive: Bool, totalDots: Int) -> CGFloat {
+        let baseSize: CGFloat = isActive ? 8 : 6
+
+        // If 5 or fewer dots, use gradual scaling from index 3 onwards
+        if totalDots <= 5 {
+            if index < 3 {
+                return baseSize
+            } else if index == 3 {
+                return baseSize * 0.75  // 75% of normal size
+            } else {
+                return baseSize * 0.6   // 60% of normal size
+            }
+        }
+
+        // For more than 5 dots, scale the last two
+        if index < 3 {
+            return baseSize
+        } else if index == 3 {
+            return baseSize * 0.75
+        } else {
+            return baseSize * 0.6
+        }
     }
 
     // MARK: - Price Voting Functions

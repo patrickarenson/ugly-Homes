@@ -22,6 +22,9 @@ struct AuthView: View {
     @State private var hasSavedCredentials = false
     @State private var showSaveBiometricPrompt = false
     @State private var rememberMe = true  // Default to true
+    @State private var showTermsOfService = false
+    @State private var agreedToTerms = false
+    @State private var acceptedTermsCheckbox = false
 
     var body: some View {
         ZStack {
@@ -117,6 +120,31 @@ struct AuthView: View {
                             .cornerRadius(8)
                     }
 
+                    // Terms of Service checkbox (only on signup)
+                    if isSignUp {
+                        HStack(alignment: .top, spacing: 8) {
+                            Button(action: {
+                                acceptedTermsCheckbox.toggle()
+                            }) {
+                                Image(systemName: acceptedTermsCheckbox ? "checkmark.square.fill" : "square")
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .font(.system(size: 20))
+                            }
+
+                            Button(action: {
+                                showTermsOfService = true
+                            }) {
+                                Text("I agree to the Terms of Service")
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .font(.system(size: 14))
+                                    .underline()
+                                    .multilineTextAlignment(.leading)
+                            }
+
+                            Spacer()
+                        }
+                    }
+
                     // Remember Me checkbox (only on login)
                     if !isSignUp {
                         HStack {
@@ -161,9 +189,10 @@ struct AuthView: View {
                             endPoint: .bottom
                         )
                     )
+                    .opacity((isSignUp && !acceptedTermsCheckbox) ? 0.5 : 1.0)
                     .cornerRadius(12)
                     .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
-                    .disabled(isLoading)
+                    .disabled(isLoading || (isSignUp && !acceptedTermsCheckbox))
 
                     // Biometric login button
                     if !isSignUp && hasSavedCredentials && biometricType != .none {
@@ -199,6 +228,7 @@ struct AuthView: View {
                     Button(action: {
                         isSignUp.toggle()
                         errorMessage = ""
+                        acceptedTermsCheckbox = false
                     }) {
                         HStack(spacing: 4) {
                             Text(isSignUp ? "Already have an account?" : "Don't have an account?")
@@ -215,6 +245,9 @@ struct AuthView: View {
                 Spacer()
                 Spacer()
             }
+        }
+        .onTapGesture {
+            hideKeyboard()
         }
         .sheet(isPresented: $showForgotPassword) {
             ForgotPasswordView(showResetSuccess: $showResetSuccess)
@@ -235,6 +268,12 @@ struct AuthView: View {
         } message: {
             Text("Would you like to use \(biometricType.name) to sign in next time?")
         }
+        .sheet(isPresented: $showTermsOfService) {
+            TermsOfServiceView(agreedToTerms: $acceptedTermsCheckbox) {
+                // Just dismiss - checkbox is already updated
+                showTermsOfService = false
+            }
+        }
         .onAppear {
             checkBiometricAvailability()
             loadSavedCredentials()
@@ -245,11 +284,35 @@ struct AuthView: View {
         errorMessage = ""
         isLoading = true
 
-        Task {
-            do {
-                if isSignUp {
+        if isSignUp {
+            // For signup, proceed directly
+            Task {
+                do {
                     // Convert username to lowercase
                     let lowercaseUsername = username.lowercased()
+
+                    // CONTENT MODERATION - Check username for inappropriate content
+                    let usernameModeration = ContentModerationManager.shared.moderateText(lowercaseUsername)
+                    switch usernameModeration {
+                    case .blocked(let reason):
+                        await MainActor.run {
+                            isLoading = false
+                            errorMessage = "Username contains inappropriate content. Please choose a different username."
+                        }
+                        print("🚫 Username blocked: \(reason)")
+                        return
+
+                    case .flaggedForReview:
+                        await MainActor.run {
+                            isLoading = false
+                            errorMessage = "Username contains inappropriate content. Please choose a different username."
+                        }
+                        print("⚠️ Username flagged")
+                        return
+
+                    case .approved:
+                        break
+                    }
 
                     // Check if username already exists (case-insensitive)
                     print("🔍 Checking if username '\(lowercaseUsername)' is available...")
@@ -261,8 +324,10 @@ struct AuthView: View {
                         .value
 
                     if !existingProfiles.isEmpty {
-                        isLoading = false
-                        errorMessage = "Username '\(lowercaseUsername)' is already taken. Please choose another."
+                        await MainActor.run {
+                            isLoading = false
+                            errorMessage = "Username '\(lowercaseUsername)' is already taken. Please choose another."
+                        }
                         print("❌ Username already exists")
                         return
                     }
@@ -281,47 +346,91 @@ struct AuthView: View {
 
                     print("✅ Sign up successful! User ID: \(response.user.id)")
 
+                    // Save terms acceptance
+                    try await saveTermsAcceptance(userId: response.user.id)
+
                     // Give the trigger a moment to create the profile
                     try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
 
-                } else {
-                    // Log in
-                    let response = try await SupabaseManager.shared.client.auth.signIn(
-                        email: email,
-                        password: password
-                    )
-
-                    print("✅ Login successful! User ID: \(response.user.id)")
-
-                    // Save credentials if Remember Me is checked
-                    if rememberMe {
-                        saveCredentials()
-                    } else {
-                        clearSavedCredentials()
-                    }
-
-                    // Prompt to save credentials if biometric is available and not already saved
                     await MainActor.run {
                         isLoading = false
-                        if biometricType != .none && !hasSavedCredentials {
-                            showSaveBiometricPrompt = true
-                        } else {
-                            // Only trigger auth state change if not showing biometric prompt
-                            NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
-                        }
+                        NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
                     }
-                    return // Don't continue to the code below
+
+                } catch {
+                    await MainActor.run {
+                        isLoading = false
+                        print("❌ Signup error: \(error)")
+                        errorMessage = error.localizedDescription
+                    }
+                }
+            }
+        } else {
+            // For login, proceed normally
+            performLogin()
+        }
+    }
+
+    func performLogin() {
+        isLoading = true
+
+        Task {
+            do {
+                // Log in
+                let response = try await SupabaseManager.shared.client.auth.signIn(
+                    email: email,
+                    password: password
+                )
+
+                print("✅ Login successful! User ID: \(response.user.id)")
+
+                // Save credentials if Remember Me is checked
+                if rememberMe {
+                    saveCredentials()
+                } else {
+                    clearSavedCredentials()
                 }
 
-                isLoading = false
-                NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
+                // Prompt to save credentials if biometric is available and not already saved
+                await MainActor.run {
+                    isLoading = false
+                    if biometricType != .none && !hasSavedCredentials {
+                        showSaveBiometricPrompt = true
+                    } else {
+                        // Only trigger auth state change if not showing biometric prompt
+                        NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
+                    }
+                }
 
             } catch {
-                isLoading = false
-                print("❌ Auth error: \(error)")
-                errorMessage = error.localizedDescription
+                await MainActor.run {
+                    isLoading = false
+                    print("❌ Login error: \(error)")
+                    errorMessage = error.localizedDescription
+                }
             }
         }
+    }
+
+    func saveTermsAcceptance(userId: UUID) async throws {
+        struct TermsData: Encodable {
+            let user_id: String
+            let accepted_at: String
+            let terms_version: String
+        }
+
+        let termsData = TermsData(
+            user_id: userId.uuidString,
+            accepted_at: ISO8601DateFormatter().string(from: Date()),
+            terms_version: "1.0"
+        )
+
+        try await SupabaseManager.shared.client
+            .from("terms_acceptance")
+            .insert(termsData)
+            .execute()
+
+        print("✅ Terms acceptance saved")
     }
 
     func checkBiometricAvailability() {
@@ -416,6 +525,10 @@ struct AuthView: View {
         UserDefaults.standard.removeObject(forKey: "savedPassword")
         UserDefaults.standard.set(false, forKey: "rememberMe")
         print("🗑️ Cleared saved credentials")
+    }
+
+    func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }
 

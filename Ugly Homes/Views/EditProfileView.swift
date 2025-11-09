@@ -235,10 +235,41 @@ struct EditProfileView: View {
                     }
                 }
 
+                // CONTENT MODERATION - Check bio for inappropriate content
+                if !bio.isEmpty {
+                    let moderationResult = ContentModerationManager.shared.moderateText(bio)
+                    switch moderationResult {
+                    case .blocked:
+                        await MainActor.run {
+                            errorMessage = "Bio contains inappropriate content"
+                            isUploading = false
+                        }
+                        return
+
+                    case .flaggedForReview:
+                        // Flagged but allowed (could log for monitoring)
+                        print("⚠️ Bio flagged but allowed")
+                        break
+
+                    case .approved:
+                        break
+                    }
+                }
+
                 var avatarUrl: String?
 
                 // Upload profile image if selected (skip if fails)
                 if let imageData = profileImageData {
+                    // CONTENT MODERATION - Validate profile image
+                    let imageValidation = ContentModerationManager.shared.validateImage(imageData, filename: "profile.jpg")
+                    if !imageValidation.isValid {
+                        await MainActor.run {
+                            errorMessage = imageValidation.error ?? "Invalid profile image"
+                            isUploading = false
+                        }
+                        return
+                    }
+
                     let fileName = "\(userId.uuidString)-profile.jpg"
 
                     // Try to upload, but continue even if it fails

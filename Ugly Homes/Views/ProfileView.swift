@@ -17,6 +17,8 @@ struct ProfileView: View {
     @State private var showAccountSettings = false
     @State private var currentUserId: UUID?
     @State private var showChat = false
+    @State private var showBlockAlert = false
+    @State private var showBlockConfirmation = false
 
     init(viewingUserId: UUID? = nil) {
         self.viewingUserId = viewingUserId
@@ -95,27 +97,28 @@ struct ProfileView: View {
                                 .padding(.horizontal)
                         }
 
-                        // Message button (only show when viewing another user's profile)
-                        if isViewingOtherProfile {
-                            Button(action: {
-                                print("🔵 Message button tapped for: \(profile.username)")
-                                showChat = true
-                                print("🔵 showChat = \(showChat)")
-                            }) {
-                                HStack {
-                                    Image(systemName: "message.fill")
-                                    Text("Message")
-                                        .fontWeight(.semibold)
-                                }
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(Color.blue)
-                                .cornerRadius(8)
-                            }
-                            .padding(.horizontal, 40)
-                            .padding(.top, 8)
-                        }
+                        // Message button - COMMENTED OUT for App Store submission
+                        // TODO: Re-enable once fully tested
+//                        if isViewingOtherProfile {
+//                            Button(action: {
+//                                print("🔵 Message button tapped for: \(profile.username)")
+//                                showChat = true
+//                                print("🔵 showChat = \(showChat)")
+//                            }) {
+//                                HStack {
+//                                    Image(systemName: "message.fill")
+//                                    Text("Message")
+//                                        .fontWeight(.semibold)
+//                                }
+//                                .foregroundColor(.white)
+//                                .frame(maxWidth: .infinity)
+//                                .padding(.vertical, 10)
+//                                .background(Color.blue)
+//                                .cornerRadius(8)
+//                            }
+//                            .padding(.horizontal, 40)
+//                            .padding(.top, 8)
+//                        }
                     }
                     .padding(.top)
 
@@ -266,7 +269,7 @@ struct ProfileView: View {
         .navigationTitle(isViewingOtherProfile ? (profile?.username ?? "Profile") : "Profile")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // Only show menu when viewing own profile
+            // Show menu when viewing own profile
             if !isViewingOtherProfile {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
@@ -286,6 +289,22 @@ struct ProfileView: View {
                             signOut()
                         }) {
                             Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.title3)
+                    }
+                }
+            }
+
+            // Show menu when viewing another user's profile
+            if isViewingOtherProfile {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button(role: .destructive, action: {
+                            showBlockAlert = true
+                        }) {
+                            Label("Block User", systemImage: "hand.raised.fill")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -316,6 +335,19 @@ struct ProfileView: View {
                 let _ = print("🔴 profile is nil in sheet!")
                 Text("Error loading profile")
             }
+        }
+        .alert("Block User", isPresented: $showBlockAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Block", role: .destructive) {
+                blockUser()
+            }
+        } message: {
+            Text("Are you sure you want to block @\(profile?.username ?? "this user")? You won't see their posts anymore.")
+        }
+        .alert("User Blocked", isPresented: $showBlockConfirmation) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("You have successfully blocked this user. You won't see their posts anymore.")
         }
         .onAppear {
             loadProfile()
@@ -396,6 +428,46 @@ struct ProfileView: View {
         }
     }
 
+    func blockUser() {
+        guard let profile = profile, let currentUserId = currentUserId else {
+            print("❌ Cannot block - missing profile or current user ID")
+            return
+        }
+
+        Task {
+            do {
+                print("🚫 Blocking user: @\(profile.username)")
+
+                struct BlockData: Encodable {
+                    let blocker_id: String
+                    let blocked_id: String
+                }
+
+                let block = BlockData(
+                    blocker_id: currentUserId.uuidString,
+                    blocked_id: profile.id.uuidString
+                )
+
+                try await SupabaseManager.shared.client
+                    .from("blocked_users")
+                    .insert(block)
+                    .execute()
+
+                print("✅ User blocked successfully")
+
+                // Show confirmation message
+                await MainActor.run {
+                    showBlockConfirmation = true
+                }
+
+                // Post notification to refresh feed (remove blocked user's posts)
+                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshFeed"), object: nil)
+            } catch {
+                print("❌ Error blocking user: \(error)")
+            }
+        }
+    }
+
     func calculateRanking(homes: [Home]) -> (text: String, color: Color) {
         // Get current year
         let calendar = Calendar.current
@@ -441,6 +513,7 @@ struct PostDetailView: View {
     var body: some View {
         ScrollView {
             HomePostView(home: home, searchText: $searchText, showSoldOptions: showSoldOptions, preloadedUserId: preloadedUserId)
+                .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)")
         }
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: searchText) { oldValue, newValue in

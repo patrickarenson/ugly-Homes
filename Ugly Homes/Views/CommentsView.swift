@@ -21,6 +21,12 @@ struct CommentsView: View {
     @State private var downVoted = false
     @State private var estimatedPrice: Int
 
+    // @Mention autocomplete state
+    @State private var suggestedUsers: [Profile] = []
+    @State private var showingSuggestions = false
+    @State private var mentionQuery = ""
+    @State private var mentionStartIndex: String.Index?
+
     init(home: Home) {
         self.home = home
         _estimatedPrice = State(initialValue: NSDecimalNumber(decimal: home.price ?? 0).intValue)
@@ -165,6 +171,60 @@ struct CommentsView: View {
 
             Divider()
 
+            // @Mention autocomplete suggestions
+            if showingSuggestions && !suggestedUsers.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(suggestedUsers.prefix(5)) { user in
+                            Button(action: {
+                                selectUser(user)
+                            }) {
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(Color.orange.opacity(0.2))
+                                        .frame(width: 36, height: 36)
+                                        .overlay(
+                                            Text(user.username.prefix(1).uppercased())
+                                                .font(.headline)
+                                                .foregroundColor(.orange)
+                                        )
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("@\(user.username)")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.primary)
+
+                                        if let fullName = user.fullName, !fullName.isEmpty {
+                                            Text(fullName)
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
+                                    }
+
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color(.systemBackground))
+                            }
+                            .buttonStyle(PlainButtonStyle())
+
+                            if user.id != suggestedUsers.prefix(5).last?.id {
+                                Divider()
+                                    .padding(.leading, 64)
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 200)
+                .background(Color(.systemBackground))
+                .overlay(
+                    Rectangle()
+                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                )
+            }
+
             // Comment input
             HStack(spacing: 12) {
                 Circle()
@@ -178,6 +238,9 @@ struct CommentsView: View {
 
                 TextField("Add a comment...", text: $newComment)
                     .textFieldStyle(.plain)
+                    .onChange(of: newComment) { oldValue, newValue in
+                        handleTextChange(oldValue: oldValue, newValue: newValue)
+                    }
 
                 if !newComment.isEmpty {
                     Button(action: postComment) {
@@ -259,6 +322,26 @@ struct CommentsView: View {
             return
         }
 
+        // CONTENT MODERATION - Check comment text
+        let moderationResult = ContentModerationManager.shared.moderateText(newComment)
+        switch moderationResult {
+        case .blocked(let reason):
+            // Block the comment
+            newComment = ""
+            print("🚫 Comment blocked: \(reason)")
+            // Could show an alert here, but silently rejecting is less disruptive
+            return
+
+        case .flaggedForReview:
+            // Note: We don't mask anymore, but flagged comments could be logged or monitored
+            // For now, just let it through
+            print("⚠️ Comment flagged but allowed")
+            break
+
+        case .approved:
+            break
+        }
+
         isSending = true
 
         Task {
@@ -282,44 +365,96 @@ struct CommentsView: View {
                     .insert(newCommentData)
                     .execute()
 
-                // Create notification for post owner (don't notify yourself)
-                if home.userId != userId {
-                    struct UsernameResponse: Codable {
-                        let username: String
+                // Get current user's username for notifications
+                struct UsernameResponse: Codable {
+                    let username: String
+                }
+
+                let currentUsername = try? await SupabaseManager.shared.client
+                    .from("profiles")
+                    .select("username")
+                    .eq("id", value: userId.uuidString)
+                    .single()
+                    .execute()
+                    .value as UsernameResponse
+
+                let username = currentUsername?.username ?? "Someone"
+
+                struct NewNotification: Encodable {
+                    let user_id: String
+                    let triggered_by_user_id: String
+                    let type: String
+                    let title: String
+                    let message: String
+                    let home_id: String
+                }
+
+                // Extract @mentions from comment
+                let mentions = extractMentions(from: newComment)
+
+                // Create notification for each mentioned user
+                for mentionedUsername in mentions {
+                    // Look up user by username
+                    struct UserIdResponse: Codable {
+                        let id: String
                     }
 
-                    let currentUsername = try? await SupabaseManager.shared.client
+                    if let mentionedUser = try? await SupabaseManager.shared.client
                         .from("profiles")
-                        .select("username")
-                        .eq("id", value: userId.uuidString)
+                        .select("id")
+                        .eq("username", value: mentionedUsername)
                         .single()
                         .execute()
-                        .value as UsernameResponse
+                        .value as UserIdResponse,
+                       mentionedUser.id != userId.uuidString { // Don't notify yourself
 
-                    struct NewNotification: Encodable {
-                        let user_id: String
-                        let triggered_by_user_id: String
-                        let type: String
-                        let title: String
-                        let message: String
-                        let home_id: String
+                        let mentionNotification = NewNotification(
+                            user_id: mentionedUser.id,
+                            triggered_by_user_id: userId.uuidString,
+                            type: "mention",
+                            title: "New Mention",
+                            message: "\(username) mentioned you in a comment",
+                            home_id: home.id.uuidString
+                        )
+
+                        _ = try? await SupabaseManager.shared.client
+                            .from("notifications")
+                            .insert(mentionNotification)
+                            .execute()
+                        print("✅ Created mention notification for @\(mentionedUsername)")
+                    }
+                }
+
+                // Create notification for post owner (don't notify yourself or if already mentioned)
+                if home.userId != userId {
+                    // Check if post owner was already mentioned
+                    var ownerWasMentioned = false
+                    if let ownerUsername = try? await SupabaseManager.shared.client
+                        .from("profiles")
+                        .select("username")
+                        .eq("id", value: home.userId.uuidString)
+                        .single()
+                        .execute()
+                        .value as UsernameResponse {
+                        ownerWasMentioned = mentions.contains(ownerUsername.username)
                     }
 
-                    let username = currentUsername?.username ?? "Someone"
-                    let notification = NewNotification(
-                        user_id: home.userId.uuidString,
-                        triggered_by_user_id: userId.uuidString,
-                        type: "comment",
-                        title: "New Comment",
-                        message: "\(username) commented on your post",
-                        home_id: home.id.uuidString
-                    )
+                    if !ownerWasMentioned {
+                        let notification = NewNotification(
+                            user_id: home.userId.uuidString,
+                            triggered_by_user_id: userId.uuidString,
+                            type: "comment",
+                            title: "New Comment",
+                            message: "\(username) commented on your post",
+                            home_id: home.id.uuidString
+                        )
 
-                    _ = try? await SupabaseManager.shared.client
-                        .from("notifications")
-                        .insert(notification)
-                        .execute()
-                    print("✅ Created comment notification")
+                        _ = try? await SupabaseManager.shared.client
+                            .from("notifications")
+                            .insert(notification)
+                            .execute()
+                        print("✅ Created comment notification")
+                    }
                 }
 
                 newComment = ""
@@ -405,11 +540,115 @@ struct CommentsView: View {
         }
     }
 
+    func extractMentions(from text: String) -> [String] {
+        let pattern = "@([a-zA-Z0-9_]+)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return []
+        }
+
+        let nsString = text as NSString
+        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsString.length))
+
+        return matches.compactMap { match in
+            guard match.numberOfRanges > 1 else { return nil }
+            let usernameRange = match.range(at: 1)
+            return nsString.substring(with: usernameRange)
+        }
+    }
+
     func formatPrice(_ price: Int) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         return formatter.string(from: NSNumber(value: price)) ?? "\(price)"
+    }
+
+    // MARK: - @Mention Autocomplete Functions
+
+    func handleTextChange(oldValue: String, newValue: String) {
+        // Detect if user is typing an @mention
+        if newValue.contains("@") {
+            // Find the last @ symbol
+            if let atIndex = newValue.lastIndex(of: "@") {
+                let afterAt = String(newValue[newValue.index(after: atIndex)...])
+
+                // Check if there's a space or the string ends (valid mention in progress)
+                if let spaceIndex = afterAt.firstIndex(of: " ") {
+                    let query = String(afterAt[..<spaceIndex])
+                    if !query.isEmpty {
+                        mentionQuery = query
+                        mentionStartIndex = atIndex
+                        searchUsers(query: query)
+                    } else {
+                        showingSuggestions = false
+                    }
+                } else {
+                    // Still typing the username
+                    mentionQuery = afterAt
+                    mentionStartIndex = atIndex
+                    searchUsers(query: afterAt)
+                }
+            }
+        } else {
+            showingSuggestions = false
+            suggestedUsers = []
+            mentionQuery = ""
+            mentionStartIndex = nil
+        }
+    }
+
+    func searchUsers(query: String) {
+        guard !query.isEmpty else {
+            showingSuggestions = false
+            suggestedUsers = []
+            return
+        }
+
+        Task {
+            do {
+                let users: [Profile] = try await SupabaseManager.shared.client
+                    .from("profiles")
+                    .select()
+                    .ilike("username", value: "%\(query)%")
+                    .limit(5)
+                    .execute()
+                    .value
+
+                await MainActor.run {
+                    suggestedUsers = users
+                    showingSuggestions = !users.isEmpty
+                }
+            } catch {
+                print("Error searching users: \(error)")
+                await MainActor.run {
+                    suggestedUsers = []
+                    showingSuggestions = false
+                }
+            }
+        }
+    }
+
+    func selectUser(_ user: Profile) {
+        guard let startIndex = mentionStartIndex else { return }
+
+        // Replace @query with @username
+        let beforeMention = String(newComment[..<startIndex])
+        let afterMentionIndex = newComment.index(startIndex, offsetBy: mentionQuery.count + 1) // +1 for the @
+
+        let afterMention: String
+        if afterMentionIndex < newComment.endIndex {
+            afterMention = String(newComment[afterMentionIndex...])
+        } else {
+            afterMention = ""
+        }
+
+        newComment = beforeMention + "@\(user.username) " + afterMention
+
+        // Reset state
+        showingSuggestions = false
+        suggestedUsers = []
+        mentionQuery = ""
+        mentionStartIndex = nil
     }
 }
 

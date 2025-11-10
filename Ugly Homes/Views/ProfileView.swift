@@ -19,6 +19,7 @@ struct ProfileView: View {
     @State private var showChat = false
     @State private var showBlockAlert = false
     @State private var showBlockConfirmation = false
+    @State private var showBookmarks = false
 
     init(viewingUserId: UUID? = nil) {
         self.viewingUserId = viewingUserId
@@ -154,6 +155,9 @@ struct ProfileView: View {
                         }
                         .frame(maxWidth: .infinity)
 
+                        // COMMENTED OUT: Ranking feature
+                        // Replaced with Bookmarks
+                        /*
                         VStack(spacing: 3) {
                             Text(calculateRanking(homes: userHomes).text)
                                 .font(.system(size: 18, weight: .semibold))
@@ -161,6 +165,22 @@ struct ProfileView: View {
                             Text("Rank")
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        */
+
+                        // NEW: Bookmarks button
+                        Button(action: {
+                            showBookmarks = true
+                        }) {
+                            VStack(spacing: 3) {
+                                Image(systemName: "bookmark.fill")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.orange)
+                                Text("Saved")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -320,6 +340,9 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showAccountSettings) {
             AccountSettingsView()
+        }
+        .sheet(isPresented: $showBookmarks) {
+            BookmarksView()
         }
         .sheet(isPresented: $showChat) {
             if let profile = profile {

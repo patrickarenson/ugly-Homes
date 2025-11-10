@@ -592,6 +592,7 @@ struct HomePostView: View {
     @State private var soldDate: Date?
     @State private var hasCheckedLike = false
     @State private var showShareSheet = false
+    @State private var isBookmarked = false
 
     // User-generated pricing feature
     @State private var upVoted = false
@@ -899,6 +900,17 @@ struct HomePostView: View {
                         .font(.title3)
                 }
 
+                Spacer()
+
+                // Bookmark button
+                Button(action: {
+                    toggleBookmark()
+                }) {
+                    Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                        .font(.title3)
+                        .foregroundColor(isBookmarked ? .orange : .black)
+                }
+
                 // Message button - COMMENTED OUT (not requested to be re-enabled)
                 // if let profile = home.profile, let currentId = currentUserId, profile.id != currentId {
                 //     Button(action: {
@@ -1006,6 +1018,8 @@ struct HomePostView: View {
             if currentUserId == nil {
                 loadCurrentUserId()
             }
+            // Check if bookmarked
+            checkIfBookmarked()
             // Load existing price vote and community price
             loadPriceVote()
             // Check if open house is saved
@@ -1299,6 +1313,76 @@ struct HomePostView: View {
                 // Revert on error
                 isLiked.toggle()
                 likeCount += isLiked ? 1 : -1
+            }
+        }
+    }
+
+    func checkIfBookmarked() {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                let response: [BookmarkCheck] = try await SupabaseManager.shared.client
+                    .from("bookmarks")
+                    .select("id")
+                    .eq("user_id", value: userId.uuidString)
+                    .eq("home_id", value: home.id.uuidString)
+                    .execute()
+                    .value
+
+                await MainActor.run {
+                    isBookmarked = !response.isEmpty
+                }
+
+                print("✅ Bookmark status checked: \(isBookmarked)")
+            } catch {
+                print("❌ Error checking bookmark: \(error)")
+            }
+        }
+    }
+
+    struct BookmarkCheck: Decodable {
+        let id: UUID
+    }
+
+    func toggleBookmark() {
+        isBookmarked.toggle()
+
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                if isBookmarked {
+                    // Add bookmark
+                    struct NewBookmark: Encodable {
+                        let home_id: String
+                        let user_id: String
+                    }
+
+                    let bookmark = NewBookmark(
+                        home_id: home.id.uuidString,
+                        user_id: userId.uuidString
+                    )
+
+                    try await SupabaseManager.shared.client
+                        .from("bookmarks")
+                        .insert(bookmark)
+                        .execute()
+                    print("✅ Bookmark added")
+                } else {
+                    // Remove bookmark
+                    try await SupabaseManager.shared.client
+                        .from("bookmarks")
+                        .delete()
+                        .eq("user_id", value: userId.uuidString)
+                        .eq("home_id", value: home.id.uuidString)
+                        .execute()
+                    print("✅ Bookmark removed")
+                }
+            } catch {
+                print("❌ Error toggling bookmark: \(error)")
+                // Revert on error
+                isBookmarked.toggle()
             }
         }
     }

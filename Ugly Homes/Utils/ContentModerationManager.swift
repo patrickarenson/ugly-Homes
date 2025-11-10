@@ -76,13 +76,15 @@ class ContentModerationManager {
         for word in blockedWords {
             if lowercased.contains(word) {
                 print("🚫 Content blocked: Contains '\(word)'")
-                return .blocked(reason: "Content contains prohibited language")
+                print("📝 Full text (first 100 chars): \(String(text.prefix(100)))")
+                return .blocked(reason: "Content contains prohibited language: '\(word)'")
             }
         }
 
         // 2. Check for suspicious URLs
         if containsSuspiciousURL(lowercased) {
             print("⚠️ Content flagged: Suspicious URL detected")
+            print("📝 Full text (first 100 chars): \(String(text.prefix(100)))")
             return .flaggedForReview(reason: "Contains external links", filteredText: text)
         }
 
@@ -90,13 +92,15 @@ class ContentModerationManager {
         for phrase in flaggedPhrases {
             if lowercased.contains(phrase) {
                 print("⚠️ Content flagged: Contains '\(phrase)'")
-                return .flaggedForReview(reason: "Potential spam or fair housing violation", filteredText: text)
+                print("📝 Full text (first 100 chars): \(String(text.prefix(100)))")
+                return .flaggedForReview(reason: "Potential spam or fair housing violation: '\(phrase)'", filteredText: text)
             }
         }
 
         // 4. Check for excessive caps (spam indicator)
         if isExcessiveCaps(text) {
             print("⚠️ Content flagged: Excessive capitalization")
+            print("📝 Full text (first 100 chars): \(String(text.prefix(100)))")
             return .flaggedForReview(reason: "Excessive capitalization (spam indicator)", filteredText: text)
         }
 
@@ -190,17 +194,25 @@ class ContentModerationManager {
 
     /// Moderate multiple text fields (for post creation)
     func moderatePost(title: String, description: String?) -> ModerationResult {
+        print("🔍 Moderating post...")
+        print("📌 Title: \(String(title.prefix(50)))")
+        if let desc = description {
+            print("📝 Description: \(String(desc.prefix(100)))")
+        }
+
         // Check title
         let titleResult = moderateText(title)
-        if case .blocked = titleResult {
-            return titleResult
+        if case .blocked(let reason) = titleResult {
+            print("❌ Title blocked: \(reason)")
+            return .blocked(reason: "Title - \(reason)")
         }
 
         // Check description
         if let desc = description, !desc.isEmpty {
             let descResult = moderateText(desc)
-            if case .blocked = descResult {
-                return descResult
+            if case .blocked(let reason) = descResult {
+                print("❌ Description blocked: \(reason)")
+                return .blocked(reason: "Description - \(reason)")
             }
 
             // If description is flagged, return that
@@ -214,6 +226,7 @@ class ContentModerationManager {
             return titleResult
         }
 
+        print("✅ Post approved")
         return .approved
     }
 }

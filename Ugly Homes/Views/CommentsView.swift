@@ -32,6 +32,10 @@ struct CommentsView: View {
     @State private var commentToDelete: Comment?
     @State private var currentUserId: UUID?
 
+    // Error state for moderation
+    @State private var showModerationAlert = false
+    @State private var moderationErrorMessage = ""
+
     init(home: Home) {
         self.home = home
         _estimatedPrice = State(initialValue: NSDecimalNumber(decimal: home.price ?? 0).intValue)
@@ -292,6 +296,13 @@ struct CommentsView: View {
         } message: {
             Text("Are you sure you want to delete this comment? This action cannot be undone.")
         }
+        .alert("Comment Blocked", isPresented: $showModerationAlert) {
+            Button("OK", role: .cancel) {
+                // User can edit their comment and try again
+            }
+        } message: {
+            Text(moderationErrorMessage)
+        }
     }
 
     func loadCurrentUserId() {
@@ -389,10 +400,10 @@ struct CommentsView: View {
         let moderationResult = ContentModerationManager.shared.moderateText(newComment)
         switch moderationResult {
         case .blocked(let reason):
-            // Block the comment
-            newComment = ""
+            // Block the comment and show alert
             print("🚫 Comment blocked: \(reason)")
-            // Could show an alert here, but silently rejecting is less disruptive
+            moderationErrorMessage = reason
+            showModerationAlert = true
             return
 
         case .flaggedForReview:

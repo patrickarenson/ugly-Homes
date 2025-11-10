@@ -901,7 +901,7 @@ struct CreatePostView: View {
                     // Stop post creation - content is prohibited
                     await MainActor.run {
                         isUploading = false
-                        errorMessage = "Post blocked: \(reason). Please review our content policy and remove any offensive or inappropriate content."
+                        errorMessage = reason
                     }
                     print("🚫 Post blocked: \(reason)")
                     return

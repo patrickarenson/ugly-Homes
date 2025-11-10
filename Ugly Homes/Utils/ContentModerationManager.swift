@@ -77,7 +77,14 @@ class ContentModerationManager {
             if lowercased.contains(word) {
                 print("🚫 Content blocked: Contains '\(word)'")
                 print("📝 Full text (first 100 chars): \(String(text.prefix(100)))")
-                return .blocked(reason: "Content contains prohibited language: '\(word)'")
+
+                // Create user-friendly error message with the word highlighted
+                let userMessage = """
+                Your post contains the word "\(word)" which violates our content policy.
+
+                Please remove or replace this word and try again.
+                """
+                return .blocked(reason: userMessage)
             }
         }
 
@@ -204,7 +211,7 @@ class ContentModerationManager {
         let titleResult = moderateText(title)
         if case .blocked(let reason) = titleResult {
             print("❌ Title blocked: \(reason)")
-            return .blocked(reason: "Title - \(reason)")
+            return .blocked(reason: "⚠️ Issue in TITLE field:\n\n\(reason)")
         }
 
         // Check description
@@ -212,7 +219,7 @@ class ContentModerationManager {
             let descResult = moderateText(desc)
             if case .blocked(let reason) = descResult {
                 print("❌ Description blocked: \(reason)")
-                return .blocked(reason: "Description - \(reason)")
+                return .blocked(reason: "⚠️ Issue in DESCRIPTION field:\n\n\(reason)")
             }
 
             // If description is flagged, return that

@@ -108,13 +108,12 @@ struct CommentsView: View {
                         HStack(spacing: 4) {
                             // Up arrow button
                             Button(action: {
-                                submitPriceVote(voteType: "up")
+                                handleVote(voteType: "up")
                             }) {
                                 Image(systemName: "arrow.up")
                                     .font(.title3)
                                     .foregroundColor(upVoted ? .green : .gray)
                             }
-                            .disabled(upVoted || downVoted)
 
                             // Estimated price
                             Text(formatPrice(estimatedPrice))
@@ -124,13 +123,12 @@ struct CommentsView: View {
 
                             // Down arrow button
                             Button(action: {
-                                submitPriceVote(voteType: "down")
+                                handleVote(voteType: "down")
                             }) {
                                 Image(systemName: "arrow.down")
                                     .font(.title3)
                                     .foregroundColor(downVoted ? .red : .gray)
                             }
-                            .disabled(upVoted || downVoted)
                         }
                     }
                 }
@@ -285,6 +283,7 @@ struct CommentsView: View {
             loadComments()
             loadCommunityPrice()
             loadCurrentUserId()
+            loadUserVoteStatus()
         }
         .alert("Delete Comment", isPresented: $showDeleteAlert) {
             Button("Cancel", role: .cancel) { }
@@ -542,6 +541,46 @@ struct CommentsView: View {
         }
     }
 
+    func handleVote(voteType: String) {
+        // Toggle logic: if clicking the same vote, remove it
+        if (voteType == "up" && upVoted) || (voteType == "down" && downVoted) {
+            print("🔄 Removing \(voteType) vote (toggle off)")
+            removeVote()
+        } else {
+            // Either switching votes or voting for first time
+            print("✅ Submitting \(voteType) vote")
+            submitPriceVote(voteType: voteType)
+        }
+    }
+
+    func removeVote() {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                try await SupabaseManager.shared.client
+                    .from("price_votes")
+                    .delete()
+                    .eq("home_id", value: home.id.uuidString)
+                    .eq("user_id", value: userId.uuidString)
+                    .execute()
+
+                // Update local state
+                await MainActor.run {
+                    upVoted = false
+                    downVoted = false
+                }
+
+                print("✅ Vote removed successfully")
+
+                // Reload community price to see the effect
+                loadCommunityPrice()
+            } catch {
+                print("❌ Error removing vote: \(error)")
+            }
+        }
+    }
+
     func submitPriceVote(voteType: String) {
         Task {
             do {
@@ -571,12 +610,14 @@ struct CommentsView: View {
                     .execute()
 
                 // Update local state
-                if voteType == "up" {
-                    upVoted = true
-                    downVoted = false
-                } else {
-                    downVoted = true
-                    upVoted = false
+                await MainActor.run {
+                    if voteType == "up" {
+                        upVoted = true
+                        downVoted = false
+                    } else {
+                        downVoted = true
+                        upVoted = false
+                    }
                 }
 
                 print("✅ Price vote submitted: \(voteType)")
@@ -610,6 +651,47 @@ struct CommentsView: View {
                 print("❌ Error details: \(error.localizedDescription)")
                 // Fallback to original price if community price fails
                 estimatedPrice = NSDecimalNumber(decimal: home.price ?? 0).intValue
+            }
+        }
+    }
+
+    func loadUserVoteStatus() {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                struct PriceVote: Decodable {
+                    let voteType: String
+
+                    enum CodingKeys: String, CodingKey {
+                        case voteType = "vote_type"
+                    }
+                }
+
+                let response: [PriceVote] = try await SupabaseManager.shared.client
+                    .from("price_votes")
+                    .select()
+                    .eq("home_id", value: home.id.uuidString)
+                    .eq("user_id", value: userId.uuidString)
+                    .execute()
+                    .value
+
+                if let vote = response.first {
+                    await MainActor.run {
+                        if vote.voteType == "up" {
+                            upVoted = true
+                            downVoted = false
+                        } else if vote.voteType == "down" {
+                            downVoted = true
+                            upVoted = false
+                        }
+                    }
+                    print("📊 User vote status loaded: \(vote.voteType)")
+                } else {
+                    print("📊 User has not voted on this property")
+                }
+            } catch {
+                print("❌ Error loading user vote status: \(error)")
             }
         }
     }

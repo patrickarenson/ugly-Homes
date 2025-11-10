@@ -41,9 +41,10 @@ struct TagMigrationHelper {
                 // Create update structure
                 struct HomeTagsUpdate: Encodable {
                     let tags: [String]
+                    let updated_at: Date
                 }
 
-                let update = HomeTagsUpdate(tags: newTags)
+                let update = HomeTagsUpdate(tags: newTags, updated_at: Date())
 
                 // Update the home in database
                 try await SupabaseManager.shared.client
@@ -64,5 +65,10 @@ struct TagMigrationHelper {
         print("🎉 Tag migration complete!")
         print("✅ Successfully updated: \(successCount)")
         print("❌ Failed: \(failCount)")
+
+        // Post notification to refresh the feed
+        await MainActor.run {
+            Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshFeed"), object: nil)
+        }
     }
 }

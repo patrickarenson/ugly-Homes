@@ -25,5 +25,18 @@
 			</array>
 		</dict>
 	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>instagram</string>
+		<string>instagram-stories</string>
+		<string>whatsapp</string>
+		<string>fb</string>
+	</array>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Houser needs access to save property photos so you can share them on Instagram and other platforms.</string>
 </dict>
 </plist>

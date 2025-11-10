@@ -27,6 +27,11 @@ struct CommentsView: View {
     @State private var mentionQuery = ""
     @State private var mentionStartIndex: String.Index?
 
+    // Delete comment state
+    @State private var showDeleteAlert = false
+    @State private var commentToDelete: Comment?
+    @State private var currentUserId: UUID?
+
     init(home: Home) {
         self.home = home
         _estimatedPrice = State(initialValue: NSDecimalNumber(decimal: home.price ?? 0).intValue)
@@ -162,12 +167,25 @@ struct CommentsView: View {
                     } else {
                         LazyVStack(alignment: .leading, spacing: 16) {
                             ForEach(comments) { comment in
-                                CommentRow(comment: comment)
+                                CommentRow(
+                                    comment: comment,
+                                    currentUserId: currentUserId,
+                                    onDelete: {
+                                        commentToDelete = comment
+                                        showDeleteAlert = true
+                                    }
+                                )
                             }
                         }
                         .padding()
                     }
                 }
+                .simultaneousGesture(
+                    DragGesture().onChanged { _ in
+                        // Dismiss keyboard when scrolling
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                )
 
             Divider()
 
@@ -262,6 +280,30 @@ struct CommentsView: View {
         .onAppear {
             loadComments()
             loadCommunityPrice()
+            loadCurrentUserId()
+        }
+        .alert("Delete Comment", isPresented: $showDeleteAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                if let comment = commentToDelete {
+                    deleteComment(comment)
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete this comment? This action cannot be undone.")
+        }
+    }
+
+    func loadCurrentUserId() {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+                await MainActor.run {
+                    currentUserId = userId
+                }
+            } catch {
+                print("Error loading current user ID: \(error)")
+            }
         }
     }
 
@@ -283,6 +325,27 @@ struct CommentsView: View {
             } catch {
                 print("Error loading comments: \(error)")
                 isLoading = false
+            }
+        }
+    }
+
+    func deleteComment(_ comment: Comment) {
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("comments")
+                    .delete()
+                    .eq("id", value: comment.id.uuidString)
+                    .execute()
+
+                print("✅ Comment deleted successfully")
+
+                // Remove from local state immediately
+                await MainActor.run {
+                    comments.removeAll { $0.id == comment.id }
+                }
+            } catch {
+                print("❌ Error deleting comment: \(error)")
             }
         }
     }
@@ -609,7 +672,7 @@ struct CommentsView: View {
                 let users: [Profile] = try await SupabaseManager.shared.client
                     .from("profiles")
                     .select()
-                    .ilike("username", value: "%\(query)%")
+                    .ilike("username", pattern: "%\(query)%")
                     .limit(5)
                     .execute()
                     .value
@@ -654,6 +717,8 @@ struct CommentsView: View {
 
 struct CommentRow: View {
     let comment: Comment
+    let currentUserId: UUID?
+    let onDelete: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -726,6 +791,16 @@ struct CommentRow: View {
             }
 
             Spacer()
+
+            // Delete button (only show if current user owns this comment)
+            if let currentUserId = currentUserId, currentUserId == comment.userId {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.caption)
+                        .foregroundColor(.red.opacity(0.7))
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
         }
     }
 

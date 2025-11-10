@@ -197,7 +197,7 @@ struct FeedView: View {
                             if !filteredHomes.isEmpty {
                                 ForEach(filteredHomes) { home in
                                     HomePostView(home: home, searchText: $searchText)
-                                        .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)")
+                                        .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)-\(home.tags?.joined(separator: ",") ?? "")")
                                         .padding(.bottom, 16)
                                 }
                             }
@@ -280,6 +280,12 @@ struct FeedView: View {
                     .value
 
                 print("✅ Database search returned \(response.count) total post results")
+
+                // Debug: Print tags from first few results
+                for (index, home) in response.prefix(5).enumerated() {
+                    print("🏠 Property \(index + 1): \(home.title)")
+                    print("   Tags: \(home.tags ?? [])")
+                }
 
                 await MainActor.run {
                     searchResults = response
@@ -494,6 +500,14 @@ struct FeedView: View {
 
                 homes = sortedHomes
                 allHomes = sortedHomes
+
+                // Debug: Print tags from first few homes
+                print("🏷️ DEBUG - Tags from loaded homes:")
+                for (index, home) in sortedHomes.prefix(3).enumerated() {
+                    print("  Home \(index + 1): \(home.title)")
+                    print("  Tags: \(home.tags ?? [])")
+                    print("  Updated: \(home.updatedAt)")
+                }
 
                 // Print newly created posts (this session)
                 if !newlyCreatedPostIds.isEmpty {
@@ -876,14 +890,14 @@ struct HomePostView: View {
                     }
                 }
 
-                // Share button - COMMENTED OUT for App Store submission
-                // TODO: Re-enable once fully tested
-                // Button(action: {
-                //     showShareSheet = true
-                // }) {
-                //     Image(systemName: "paperplane")
-                //         .font(.title3)
-                // }
+                // Share button
+                Button(action: {
+                    shareHome()
+                    showShareSheet = true
+                }) {
+                    Image(systemName: "paperplane")
+                        .font(.title3)
+                }
 
                 // Message button - COMMENTED OUT (not requested to be re-enabled)
                 // if let profile = home.profile, let currentId = currentUserId, profile.id != currentId {
@@ -1308,25 +1322,6 @@ struct HomePostView: View {
             } catch {
                 print("❌ Error tracking share: \(error)")
             }
-        }
-
-        let message = """
-        Check out this home on Ugly Homes!
-
-        \(home.title)
-        \(home.price != nil ? "$\(home.price!)" : "")
-
-        \(home.imageUrls.first ?? "")
-        """
-
-        let activityVC = UIActivityViewController(
-            activityItems: [message],
-            applicationActivities: nil
-        )
-
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = windowScene.windows.first?.rootViewController {
-            rootVC.present(activityVC, animated: true)
         }
     }
 

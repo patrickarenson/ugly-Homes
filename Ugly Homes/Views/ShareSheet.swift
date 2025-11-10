@@ -14,13 +14,13 @@ struct ShareSheet: View {
     @State private var showCopiedMessage = false
 
     var shareURL: String {
-        // Use custom URL scheme for direct app opening
-        return "housers://home/\(home.id.uuidString)"
+        // Use Universal Link (opens app if installed, web page if not)
+        return "https://www.housers.us/property/\(home.id.uuidString)"
     }
 
     var shareText: String {
         """
-        Check out this home on Housers!
+        Check out this home on Houser
 
         \(home.title)
         \(home.price != nil ? formatPrice(home.price!) : "")
@@ -245,29 +245,11 @@ struct ShareSheet: View {
 
         // Check if Instagram is installed
         if UIApplication.shared.canOpenURL(instagramURL) {
-            // Load Housers logo as sticker overlay
-            var stickerData: Data?
-            if let logoImage = UIImage(named: "HousersLogo") {
-                // Resize logo to be smaller (sticker size)
-                let targetSize = CGSize(width: 120, height: 120)
-                UIGraphicsBeginImageContextWithOptions(targetSize, false, 0.0)
-                logoImage.draw(in: CGRect(origin: .zero, size: targetSize))
-                let resizedLogo = UIGraphicsGetImageFromCurrentImageContext()
-                UIGraphicsEndImageContext()
-
-                stickerData = resizedLogo?.pngData()
-            }
-
-            // Create pasteboard items for Instagram Stories
-            var pasteboardDict: [String: Any] = [
+            // Create pasteboard items for Instagram Stories (clean image, no overlays)
+            let pasteboardDict: [String: Any] = [
                 "com.instagram.sharedSticker.backgroundImage": imageData,
                 "com.instagram.sharedSticker.contentURL": shareURL
             ]
-
-            // Add logo as sticker overlay if available
-            if let stickerData = stickerData {
-                pasteboardDict["com.instagram.sharedSticker.stickerImage"] = stickerData
-            }
 
             let pasteboardItems: [[String: Any]] = [pasteboardDict]
 
@@ -286,6 +268,71 @@ struct ShareSheet: View {
             }
         }
     }
+
+    // REMOVED: Instagram Feed (not seamless, requires manual posting)
+    // Keeping function commented out in case needed later
+    /*
+    func shareToInstagramFeed() {
+        trackShare()
+
+        guard let imageUrl = home.imageUrls.first,
+              let url = URL(string: imageUrl) else {
+            print("❌ No image URL available")
+            return
+        }
+
+        // Download and save image to Photos
+        Task {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                guard let image = UIImage(data: data) else {
+                    print("❌ Failed to create image from data")
+                    return
+                }
+
+                // Save to Photos
+                UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+
+                // Show success alert with instructions
+                await MainActor.run {
+                    let alert = UIAlertController(
+                        title: "✅ Saved to Photos!",
+                        message: "Image saved successfully. Open Instagram and create a new post from your Photos to share this property.",
+                        preferredStyle: .alert
+                    )
+
+                    alert.addAction(UIAlertAction(title: "Open Instagram", style: .default) { _ in
+                        // Try to open Instagram app
+                        if let instagramURL = URL(string: "instagram://app"),
+                           UIApplication.shared.canOpenURL(instagramURL) {
+                            UIApplication.shared.open(instagramURL)
+                        } else if let appStoreURL = URL(string: "https://apps.apple.com/app/instagram/id389801252") {
+                            UIApplication.shared.open(appStoreURL)
+                        }
+                        dismiss()
+                    })
+
+                    alert.addAction(UIAlertAction(title: "OK", style: .cancel) { _ in
+                        dismiss()
+                    })
+
+                    // Present alert
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let rootVC = windowScene.windows.first?.rootViewController {
+                        var topController = rootVC
+                        while let presented = topController.presentedViewController {
+                            topController = presented
+                        }
+                        topController.present(alert, animated: true)
+                    }
+                }
+
+            } catch {
+                print("❌ Failed to download image: \(error)")
+            }
+        }
+    }
+    */
 
     func copyLink() {
         trackShare()
@@ -353,7 +400,7 @@ struct ShareSheet: View {
 
             // Add text with URL
             let shareMessage = """
-            Check out this home on Housers!
+            Check out this home on Houser
 
             \(home.title)
             \(home.price != nil ? formatPrice(home.price!) : "")
@@ -542,11 +589,15 @@ struct ShareSheet: View {
     func shareViaEmail() {
         trackShare()
 
-        let subject = "Check out this home on Housers!"
-        let body = shareText
+        let subject = "Check out this home on Houser"
+        let bodyWithLink = """
+        \(shareText)
+
+        \(shareURL)
+        """
 
         let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let encodedBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let encodedBody = bodyWithLink.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
 
         let mailURL = "mailto:?subject=\(encodedSubject)&body=\(encodedBody)"
 
@@ -607,7 +658,7 @@ struct ShareSheet: View {
 
             // Add text with URL
             let shareMessage = """
-            Check out this home on Housers!
+            Check out this home on Houser
 
             \(home.title)
             \(home.price != nil ? formatPrice(home.price!) : "")

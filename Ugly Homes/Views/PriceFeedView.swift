@@ -186,6 +186,7 @@ struct PriceFeedView: View {
                         LazyVStack(spacing: 0) {
                             ForEach(filteredHomes) { home in
                                 HomePostView(home: home, searchText: $searchText)
+                                    .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)-\(home.tags?.joined(separator: ",") ?? "")")
                                     .padding(.bottom, 16)
                             }
                         }
@@ -211,6 +212,9 @@ struct PriceFeedView: View {
                 loadHomes()
             }
             .onAppear {
+                loadHomes()
+            }
+            .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("RefreshFeed"))) { _ in
                 loadHomes()
             }
         }

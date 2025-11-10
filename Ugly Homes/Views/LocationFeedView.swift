@@ -229,7 +229,7 @@ struct LocationFeedView: View {
                                 LazyVStack(spacing: 0) {
                                     ForEach(filteredHomes) { home in
                                         HomePostView(home: home, searchText: $searchText)
-                                            .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)")
+                                            .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)-\(home.tags?.joined(separator: ",") ?? "")")
                                             .padding(.bottom, 16)
                                     }
                                 }
@@ -252,7 +252,7 @@ struct LocationFeedView: View {
                 NavigationView {
                     ScrollView {
                         HomePostView(home: home, searchText: $searchText)
-                            .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)")
+                            .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)-\(home.tags?.joined(separator: ",") ?? "")")
                     }
                     .navigationTitle("Property")
                     .navigationBarTitleDisplayMode(.inline)
@@ -314,6 +314,9 @@ struct LocationFeedView: View {
             .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("RefreshOpenHouseList"))) { _ in
                 print("🔔 Received RefreshOpenHouseList notification")
                 loadSavedOpenHouses()
+            }
+            .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("RefreshFeed"))) { _ in
+                loadHomes()
             }
         }
     }
@@ -687,7 +690,6 @@ struct PropertyMapView: View {
         // Try exact match first
         let cityKey = "\(cleanCity),\(cleanState)"
         if let coordinate = USCityCoordinates.coordinates[cityKey] {
-            print("📍 Found exact match for: \(cityKey)")
             return coordinate
         }
 
@@ -700,14 +702,12 @@ struct PropertyMapView: View {
 
                 // Check if the property city contains the dictionary city or vice versa
                 if cleanState == dictState && (cleanCity.contains(dictCity) || dictCity.contains(cleanCity)) {
-                    print("📍 Found partial match: \(cleanCity) -> \(dictCity), \(dictState)")
                     return coordinate
                 }
             }
         }
 
         // Fallback to state center if city not found
-        print("⚠️ City '\(cleanCity)' not found in database, using state center for \(cleanState)")
         if let stateCenter = USStateCoordinates.coordinates[cleanState] {
             return stateCenter
         }

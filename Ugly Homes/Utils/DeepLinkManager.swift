@@ -22,7 +22,7 @@ class DeepLinkManager: ObservableObject {
         }
     }
 
-    /// Handle an incoming URL (e.g., housers://home/123 or https://housers.app/home/123)
+    /// Handle an incoming URL (e.g., housers://property/123 or https://housers.us/property/123)
     func handleURL(_ url: URL) {
         print("🔗 Deep link received: \(url.absoluteString)")
         print("🔗 URL scheme: \(url.scheme ?? "none")")
@@ -36,18 +36,18 @@ class DeepLinkManager: ObservableObject {
         // Extract home ID from path
         var homeIdString: String? = nil
 
-        // For housers://home/UUID format
+        // For housers://home/UUID or housers://property/UUID format
         if url.scheme == "housers" {
-            // Host is "home" and path contains the UUID
-            if url.host == "home", let path = url.pathComponents.last {
+            // Host is "home" or "property" and path contains the UUID
+            if (url.host == "home" || url.host == "property"), let path = url.pathComponents.last {
                 homeIdString = path
             } else if pathComponents.count >= 2 {
-                // Sometimes it's parsed as path: "/home/UUID"
+                // Sometimes it's parsed as path: "/home/UUID" or "/property/UUID"
                 homeIdString = pathComponents[pathComponents.count - 1]
             }
         }
-        // For https://housers.app/home/UUID format
-        else if pathComponents.count >= 3 && pathComponents[1] == "home" {
+        // For https://housers.us/home/UUID or https://housers.us/property/UUID format
+        else if pathComponents.count >= 3 && (pathComponents[1] == "home" || pathComponents[1] == "property") {
             homeIdString = pathComponents[2]
         }
 

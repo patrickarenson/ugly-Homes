@@ -355,6 +355,15 @@ struct AuthView: View {
                     await MainActor.run {
                         isLoading = false
                         NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
+
+                        // Request push notification permission
+                        NotificationManager.shared.requestPermission { granted in
+                            if granted {
+                                print("✅ Push notifications enabled")
+                            } else {
+                                print("⚠️ Push notifications declined")
+                            }
+                        }
                     }
 
                 } catch {
@@ -399,6 +408,15 @@ struct AuthView: View {
                     } else {
                         // Only trigger auth state change if not showing biometric prompt
                         NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
+                    }
+
+                    // Request push notification permission
+                    NotificationManager.shared.requestPermission { granted in
+                        if granted {
+                            print("✅ Push notifications enabled")
+                        } else {
+                            print("⚠️ Push notifications declined")
+                        }
                     }
                 }
 
@@ -471,6 +489,15 @@ struct AuthView: View {
                     await MainActor.run {
                         isLoading = false
                         NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
+
+                        // Request push notification permission
+                        NotificationManager.shared.requestPermission { granted in
+                            if granted {
+                                print("✅ Push notifications enabled")
+                            } else {
+                                print("⚠️ Push notifications declined")
+                            }
+                        }
                     }
                 } else {
                     await MainActor.run {

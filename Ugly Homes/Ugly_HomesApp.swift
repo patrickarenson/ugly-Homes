@@ -17,6 +17,11 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
+    // Lock orientation to portrait only (like Instagram)
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        return .portrait
+    }
+
     // Called when APNs successfully registers the device
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         NotificationManager.shared.didRegisterForRemoteNotifications(deviceToken: deviceToken)

@@ -12,6 +12,8 @@ struct ProfileView: View {
 
     @State private var profile: Profile?
     @State private var userHomes: [Home] = []
+    @State private var bookmarkedHomes: [Home] = []
+    @State private var showingBookmarks = false
     @State private var isLoading = false
     @State private var showEditProfile = false
     @State private var showAccountSettings = false
@@ -19,7 +21,6 @@ struct ProfileView: View {
     @State private var showChat = false
     @State private var showBlockAlert = false
     @State private var showBlockConfirmation = false
-    @State private var showBookmarks = false
 
     init(viewingUserId: UUID? = nil) {
         self.viewingUserId = viewingUserId
@@ -169,15 +170,18 @@ struct ProfileView: View {
                         .frame(maxWidth: .infinity)
                         */
 
-                        // NEW: Bookmarks button
+                        // Dynamic toggle button - Shows bookmark when on posts, shows grid when on bookmarks
                         Button(action: {
-                            showBookmarks = true
+                            showingBookmarks.toggle()
+                            if showingBookmarks {
+                                loadBookmarks()
+                            }
                         }) {
                             VStack(spacing: 3) {
-                                Image(systemName: "bookmark.fill")
+                                Image(systemName: showingBookmarks ? "square.grid.3x3.fill" : "bookmark.fill")
                                     .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(.orange)
-                                Text("Saved")
+                                    .foregroundColor(showingBookmarks ? .gray : .gray)
+                                Text(showingBookmarks ? "Posts" : "Saved")
                                     .font(.system(size: 11))
                                     .foregroundColor(.secondary)
                             }
@@ -189,24 +193,121 @@ struct ProfileView: View {
 
                     Divider()
 
-                    // User's posts grid
-                    if userHomes.isEmpty {
-                        VStack(spacing: 20) {
-                            Image(systemName: "house")
-                                .font(.system(size: 60))
-                                .foregroundColor(.gray)
-                            Text("No posts yet")
-                                .font(.title3)
-                                .foregroundColor(.gray)
+                    // Grid - Shows either user's posts or bookmarked homes
+                    if showingBookmarks {
+                        // Bookmarked homes grid
+                        if bookmarkedHomes.isEmpty {
+                            VStack(spacing: 20) {
+                                Image(systemName: "bookmark")
+                                    .font(.system(size: 60))
+                                    .foregroundColor(.gray)
+                                Text("No saved homes yet")
+                                    .font(.title3)
+                                    .foregroundColor(.gray)
+                            }
+                            .padding(.top, 60)
+                        } else {
+                            LazyVGrid(columns: [
+                                GridItem(.flexible()),
+                                GridItem(.flexible()),
+                                GridItem(.flexible())
+                            ], spacing: 2) {
+                                ForEach(bookmarkedHomes) { home in
+                                    if let imageUrl = home.imageUrls.first {
+                                        NavigationLink(destination: PostDetailView(home: home, showSoldOptions: false, preloadedUserId: currentUserId)) {
+                                            ZStack(alignment: .topTrailing) {
+                                                AsyncImage(url: URL(string: imageUrl)) { phase in
+                                                    switch phase {
+                                                    case .empty:
+                                                        Rectangle()
+                                                            .fill(Color.gray.opacity(0.2))
+                                                            .aspectRatio(1, contentMode: .fill)
+                                                    case .success(let image):
+                                                        image
+                                                            .resizable()
+                                                            .aspectRatio(1, contentMode: .fill)
+                                                    case .failure:
+                                                        Rectangle()
+                                                            .fill(Color.gray.opacity(0.2))
+                                                            .aspectRatio(1, contentMode: .fill)
+                                                    @unknown default:
+                                                        Rectangle()
+                                                            .fill(Color.gray.opacity(0.2))
+                                                            .aspectRatio(1, contentMode: .fill)
+                                                    }
+                                                }
+                                                .clipped()
+
+                                                VStack(alignment: .trailing, spacing: 4) {
+                                                    // Manual status badge
+                                                    if let soldStatus = home.soldStatus {
+                                                        Text(soldStatus.uppercased())
+                                                            .font(.system(size: 9, weight: .bold))
+                                                            .foregroundColor(.white)
+                                                            .padding(.horizontal, 6)
+                                                            .padding(.vertical, 3)
+                                                            .background(
+                                                                soldStatus == "sold" ? Color.red :
+                                                                soldStatus == "leased" ? Color.blue :
+                                                                soldStatus == "pending" ? Color.yellow : Color.gray
+                                                            )
+                                                            .cornerRadius(4)
+                                                    }
+
+                                                    // Automatic listing status badge from Zillow API
+                                                    if let listingStatus = home.listingStatus, listingStatus != "active" {
+                                                        Text(listingStatus.uppercased())
+                                                            .font(.system(size: 9, weight: .bold))
+                                                            .foregroundColor(.white)
+                                                            .padding(.horizontal, 6)
+                                                            .padding(.vertical, 3)
+                                                            .background(
+                                                                listingStatus == "sold" ? Color.green :
+                                                                listingStatus == "pending" ? Color.orange :
+                                                                listingStatus == "off_market" ? Color.red : Color.gray
+                                                            )
+                                                            .cornerRadius(4)
+                                                    }
+
+                                                    if home.openHousePaid == true, let openHouseDate = home.openHouseDate {
+                                                        let isUpcoming = openHouseDate > Date().addingTimeInterval(-86400)
+                                                        if isUpcoming {
+                                                            Text("OPEN HOUSE")
+                                                                .font(.system(size: 8, weight: .bold))
+                                                                .foregroundColor(.white)
+                                                                .padding(.horizontal, 5)
+                                                                .padding(.vertical, 2)
+                                                                .background(Color.green)
+                                                                .cornerRadius(4)
+                                                        }
+                                                    }
+                                                }
+                                                .padding(4)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        .padding(.top, 60)
                     } else {
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible()),
-                            GridItem(.flexible())
-                        ], spacing: 2) {
-                            ForEach(userHomes) { home in
+                        // User's posts grid
+                        if userHomes.isEmpty {
+                            VStack(spacing: 20) {
+                                Image(systemName: "house")
+                                    .font(.system(size: 60))
+                                    .foregroundColor(.gray)
+                                Text("No posts yet")
+                                    .font(.title3)
+                                    .foregroundColor(.gray)
+                            }
+                            .padding(.top, 60)
+                        } else {
+                            LazyVGrid(columns: [
+                                GridItem(.flexible()),
+                                GridItem(.flexible()),
+                                GridItem(.flexible())
+                            ], spacing: 2) {
+                                ForEach(userHomes) { home in
                                 if let imageUrl = home.imageUrls.first {
                                     NavigationLink(destination: PostDetailView(home: home, showSoldOptions: !isViewingOtherProfile, preloadedUserId: currentUserId)) {
                                         ZStack(alignment: .topTrailing) {
@@ -233,7 +334,7 @@ struct ProfileView: View {
                                             .clipped()
 
                                             VStack(alignment: .trailing, spacing: 4) {
-                                                // Sold/Leased/Pending badge overlay
+                                                // Sold/Leased/Pending badge overlay (manual)
                                                 if let soldStatus = home.soldStatus {
                                                     Text(soldStatus.uppercased())
                                                         .font(.system(size: 9, weight: .bold))
@@ -244,6 +345,21 @@ struct ProfileView: View {
                                                             soldStatus == "sold" ? Color.red :
                                                             soldStatus == "leased" ? Color.blue :
                                                             soldStatus == "pending" ? Color.yellow : Color.gray
+                                                        )
+                                                        .cornerRadius(4)
+                                                }
+
+                                                // Automatic listing status badge from Zillow API
+                                                if let listingStatus = home.listingStatus, listingStatus != "active" {
+                                                    Text(listingStatus.uppercased())
+                                                        .font(.system(size: 9, weight: .bold))
+                                                        .foregroundColor(.white)
+                                                        .padding(.horizontal, 6)
+                                                        .padding(.vertical, 3)
+                                                        .background(
+                                                            listingStatus == "sold" ? Color.green :
+                                                            listingStatus == "pending" ? Color.orange :
+                                                            listingStatus == "off_market" ? Color.red : Color.gray
                                                         )
                                                         .cornerRadius(4)
                                                 }
@@ -268,6 +384,7 @@ struct ProfileView: View {
                                     }
                                 }
                             }
+                        }
                         }
                     }
                 } else {
@@ -340,9 +457,6 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showAccountSettings) {
             AccountSettingsView()
-        }
-        .sheet(isPresented: $showBookmarks) {
-            BookmarksView()
         }
         .sheet(isPresented: $showChat) {
             if let profile = profile {
@@ -487,6 +601,62 @@ struct ProfileView: View {
                 Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshFeed"), object: nil)
             } catch {
                 print("❌ Error blocking user: \(error)")
+            }
+        }
+    }
+
+    func loadBookmarks() {
+        Task {
+            do {
+                guard let userId = currentUserId else {
+                    print("❌ No current user ID to load bookmarks")
+                    return
+                }
+
+                print("🔍 Loading bookmarks for user: \(userId)")
+
+                // First, get all bookmark IDs for this user
+                struct BookmarkRecord: Decodable {
+                    let home_id: UUID
+                }
+
+                let bookmarkRecords: [BookmarkRecord] = try await SupabaseManager.shared.client
+                    .from("bookmarks")
+                    .select("home_id")
+                    .eq("user_id", value: userId.uuidString)
+                    .order("created_at", ascending: false)
+                    .execute()
+                    .value
+
+                print("📋 Found \(bookmarkRecords.count) bookmark records")
+
+                if bookmarkRecords.isEmpty {
+                    await MainActor.run {
+                        bookmarkedHomes = []
+                    }
+                    return
+                }
+
+                // Now fetch the actual homes
+                let homeIds = bookmarkRecords.map { $0.home_id.uuidString }
+
+                let response: [Home] = try await SupabaseManager.shared.client
+                    .from("homes")
+                    .select("*, profile:user_id(*)")
+                    .in("id", values: homeIds)
+                    .execute()
+                    .value
+
+                print("✅ Loaded \(response.count) bookmarked homes")
+
+                await MainActor.run {
+                    // Sort homes to match bookmark order
+                    bookmarkedHomes = homeIds.compactMap { homeIdString in
+                        response.first { $0.id.uuidString == homeIdString }
+                    }
+                }
+            } catch {
+                print("❌ Error loading bookmarks: \(error)")
             }
         }
     }

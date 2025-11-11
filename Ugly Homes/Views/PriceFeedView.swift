@@ -11,10 +11,34 @@ struct PriceFeedView: View {
     @State private var homes: [Home] = []
     @State private var allHomes: [Home] = []
     @State private var isLoading = true
-    @State private var showCreatePost = false
     @State private var sortOrder: PriceSortOrder = .lowToHigh
     @State private var listingFilter: ListingFilter = .all
-    @State private var searchText = ""
+    @State private var tagSearch = ""
+    @State private var selectedTags: [String] = []
+    @State private var showTagSuggestions = false
+    @FocusState private var isSearchFocused: Bool
+
+    // Get all unique tags from homes for autocomplete
+    var availableTags: [String] {
+        var tags: Set<String> = []
+        for home in allHomes {
+            if let homeTags = home.tags {
+                for tag in homeTags {
+                    tags.insert(tag)
+                }
+            }
+        }
+        return Array(tags).sorted()
+    }
+
+    // Filter tags based on search
+    var suggestedTags: [String] {
+        guard !tagSearch.isEmpty else { return [] }
+        let search = tagSearch.lowercased().replacingOccurrences(of: "#", with: "")
+        return availableTags.filter { tag in
+            tag.lowercased().contains(search) && !selectedTags.contains(tag)
+        }.prefix(5).map { $0 }
+    }
 
     enum PriceSortOrder: String, CaseIterable {
         case lowToHigh = "Low to High"
@@ -28,76 +52,76 @@ struct PriceFeedView: View {
     }
 
     var filteredHomes: [Home] {
-        if searchText.isEmpty {
-            return homes
-        } else {
-            let filtered = allHomes.filter { home in
-                let search = searchText.lowercased()
+        var filtered = homes
 
-                // Debug: Print profile info for first home
-                if home.id == allHomes.first?.id {
-                    print("🔍 DEBUG - First home profile: \(home.profile?.username ?? "NO USERNAME")")
-                    print("🔍 DEBUG - Searching for: '\(searchText)'")
-                }
+        // Filter by tags (must match ALL selected tags)
+        if !selectedTags.isEmpty {
+            filtered = filtered.filter { home in
+                guard let homeTags = home.tags else { return false }
 
-                // Search by tags (hashtags)
-                if let tags = home.tags {
-                    for tag in tags {
-                        if tag.lowercased().contains(search) {
-                            return true
-                        }
+                // Check if home has ALL selected tags
+                for selectedTag in selectedTags {
+                    let tagLower = selectedTag.lowercased().replacingOccurrences(of: "#", with: "")
+                    let hasTag = homeTags.contains { homeTag in
+                        homeTag.lowercased().contains(tagLower)
+                    }
+                    if !hasTag {
+                        return false
                     }
                 }
-
-                // Search by username
-                if let username = home.profile?.username, username.lowercased().contains(search) {
-                    print("✅ Found match in username: \(username)")
-                    return true
-                }
-
-                // Search by address, city, state, zip
-                if let address = home.address, address.lowercased().contains(search) {
-                    return true
-                }
-                if let city = home.city, city.lowercased().contains(search) {
-                    return true
-                }
-                if let state = home.state, state.lowercased().contains(search) {
-                    return true
-                }
-                if let zipCode = home.zipCode, zipCode.contains(searchText) {
-                    return true
-                }
-                return false
+                return true
             }
-
-            print("🔍 Search for '\(searchText)' returned \(filtered.count) results")
-            return filtered
         }
+
+        print("🔍 Tags: \(selectedTags) - \(filtered.count) results")
+        return filtered
     }
 
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // Search bar - positioned at very top
-                HStack(spacing: 12) {
+                // Tag search bar with autocomplete
+                HStack(spacing: 8) {
+                    // Tag search field with selected tags
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
                             .font(.system(size: 14))
 
-                        TextField("Search by tag, username, or address", text: $searchText)
-                            .textFieldStyle(.plain)
-                            .autocorrectionDisabled()
-                            .font(.system(size: 15))
+                        // Show selected tags as blue pills
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(selectedTags, id: \.self) { tag in
+                                    HStack(spacing: 4) {
+                                        Text(tag)
+                                            .font(.system(size: 13, weight: .medium))
+                                        Button(action: {
+                                            selectedTags.removeAll { $0 == tag }
+                                        }) {
+                                            Image(systemName: "xmark")
+                                                .font(.system(size: 10))
+                                        }
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color.blue)
+                                    .cornerRadius(15)
+                                }
 
-                        if !searchText.isEmpty {
-                            Button(action: {
-                                searchText = ""
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.secondary)
-                                    .font(.system(size: 14))
+                                TextField("Search tags", text: $tagSearch)
+                                    .textFieldStyle(.plain)
+                                    .autocorrectionDisabled()
+                                    .autocapitalization(.none)
+                                    .font(.system(size: 15))
+                                    .frame(minWidth: 100)
+                                    .focused($isSearchFocused)
+                                    .onSubmit {
+                                        addTag()
+                                    }
+                                    .onChange(of: tagSearch) { oldValue, newValue in
+                                        showTagSuggestions = !newValue.isEmpty
+                                    }
                             }
                         }
                     }
@@ -105,6 +129,45 @@ struct PriceFeedView: View {
                     .padding(.vertical, 9)
                     .background(Color(.systemGray6))
                     .cornerRadius(12)
+                    .frame(maxWidth: .infinity)
+                    .onTapGesture {
+                        isSearchFocused = true
+                    }
+                    .background(alignment: .top) {
+                        // Tag suggestions dropdown
+                        if showTagSuggestions && !suggestedTags.isEmpty {
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(suggestedTags, id: \.self) { tag in
+                                    Button(action: {
+                                        selectedTags.append(tag)
+                                        tagSearch = ""
+                                        showTagSuggestions = false
+                                    }) {
+                                        HStack {
+                                            Text(tag)
+                                                .font(.system(size: 14))
+                                                .foregroundColor(.primary)
+                                            Spacer()
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 10)
+                                        .background(Color(.systemBackground))
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    if tag != suggestedTags.last {
+                                        Divider()
+                                    }
+                                }
+                            }
+                            .background(Color(.systemBackground))
+                            .cornerRadius(8)
+                            .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                            .offset(y: 38)
+                            .frame(width: 200)
+                            .zIndex(2000)
+                        }
+                    }
 
                     Menu {
                         Section(header: Text("Filter by Type")) {
@@ -127,18 +190,11 @@ struct PriceFeedView: View {
                             .font(.system(size: 24))
                             .foregroundColor(.primary)
                     }
-
-                    Button(action: {
-                        showCreatePost = true
-                    }) {
-                        Image(systemName: "plus.app.fill")
-                            .font(.system(size: 28))
-                            .foregroundColor(.primary)
-                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
                 .background(Color(.systemBackground))
+                .zIndex(1)
 
                 Divider()
 
@@ -154,11 +210,11 @@ struct PriceFeedView: View {
                     }
                 } else if filteredHomes.isEmpty {
                     VStack(spacing: 16) {
-                        Image(systemName: searchText.isEmpty ? "dollarsign.circle" : "magnifyingglass")
+                        Image(systemName: selectedTags.isEmpty ? "dollarsign.circle" : "magnifyingglass")
                             .font(.system(size: 60))
                             .foregroundColor(.gray)
 
-                        if searchText.isEmpty {
+                        if selectedTags.isEmpty {
                             Text("No homes yet")
                                 .font(.title2)
                                 .fontWeight(.semibold)
@@ -185,7 +241,7 @@ struct PriceFeedView: View {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(filteredHomes) { home in
-                                HomePostView(home: home, searchText: $searchText)
+                                HomePostView(home: home, searchText: $tagSearch)
                                     .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)-\(home.tags?.joined(separator: ",") ?? "")")
                                     .padding(.bottom, 16)
                             }
@@ -195,15 +251,8 @@ struct PriceFeedView: View {
             }
             .navigationBarHidden(true)
             .onTapGesture {
-                hideKeyboard()
-            }
-            .sheet(isPresented: $showCreatePost) {
-                CreatePostView()
-            }
-            .onChange(of: showCreatePost) { oldValue, newValue in
-                if !newValue {
-                    loadHomes()
-                }
+                isSearchFocused = false
+                showTagSuggestions = false
             }
             .onChange(of: sortOrder) { oldValue, newValue in
                 loadHomes()
@@ -222,6 +271,16 @@ struct PriceFeedView: View {
 
     func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+
+    func addTag() {
+        let cleanTag = tagSearch.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
+
+        if !cleanTag.isEmpty && !selectedTags.contains(cleanTag) {
+            selectedTags.append(cleanTag)
+            tagSearch = ""
+            showTagSuggestions = false
+        }
     }
 
     func loadHomes() {

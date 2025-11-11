@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct Home: Codable, Identifiable {
+struct Home: Codable, Identifiable, Hashable {
     let id: UUID
     let userId: UUID
     var title: String
@@ -34,6 +34,9 @@ struct Home: Codable, Identifiable {
     var moderationReason: String?
     var soldStatus: String?
     var soldDate: Date?
+    var listingStatus: String? // active, pending, sold, off_market - auto-updated daily
+    var zpid: String? // Zillow Property ID for status tracking
+    var statusUpdatedAt: Date?
     var openHouseDate: Date?
     var openHouseEndDate: Date?
     var openHousePaid: Bool?
@@ -74,6 +77,9 @@ struct Home: Codable, Identifiable {
         case moderationReason = "moderation_reason"
         case soldStatus = "sold_status"
         case soldDate = "sold_date"
+        case listingStatus = "listing_status"
+        case zpid
+        case statusUpdatedAt = "status_updated_at"
         case openHouseDate = "open_house_date"
         case openHouseEndDate = "open_house_end_date"
         case openHousePaid = "open_house_paid"

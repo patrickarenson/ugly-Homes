@@ -687,7 +687,6 @@ struct CreatePostView: View {
         Task {
             // Retry logic: try up to 3 times
             var attempt = 0
-            var lastError: Error?
 
             while attempt < 3 {
                 do {
@@ -836,7 +835,6 @@ struct CreatePostView: View {
 
                 } catch let error as NSError {
                     print("⚠️ Import attempt \(attempt) failed: \(error.localizedDescription)")
-                    lastError = error
 
                     // If this was the last attempt, show error
                     if attempt >= 3 {

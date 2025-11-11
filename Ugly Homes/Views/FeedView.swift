@@ -334,6 +334,9 @@ struct FeedView: View {
                     let archivedAt: Date?
                     let soldStatus: String?
                     let soldDate: Date?
+                    let listingStatus: String?
+                    let zpid: String?
+                    let statusUpdatedAt: Date?
                     let openHouseDate: Date?
                     let openHouseEndDate: Date?
                     let openHousePaid: Bool?
@@ -365,6 +368,9 @@ struct FeedView: View {
                         case archivedAt = "archived_at"
                         case soldStatus = "sold_status"
                         case soldDate = "sold_date"
+                        case listingStatus = "listing_status"
+                        case zpid
+                        case statusUpdatedAt = "status_updated_at"
                         case openHouseDate = "open_house_date"
                         case openHouseEndDate = "open_house_end_date"
                         case openHousePaid = "open_house_paid"
@@ -449,6 +455,7 @@ struct FeedView: View {
                         description: homeResponse.description,
                         price: homeResponse.price,
                         address: homeResponse.address,
+                        unit: nil,
                         city: homeResponse.city,
                         state: homeResponse.state,
                         zipCode: homeResponse.zipCode,
@@ -463,8 +470,13 @@ struct FeedView: View {
                         isActive: homeResponse.isActive,
                         isArchived: homeResponse.isArchived,
                         archivedAt: homeResponse.archivedAt,
+                        requiresReview: nil,
+                        moderationReason: nil,
                         soldStatus: homeResponse.soldStatus,
                         soldDate: homeResponse.soldDate,
+                        listingStatus: homeResponse.listingStatus,
+                        zpid: homeResponse.zpid,
+                        statusUpdatedAt: homeResponse.statusUpdatedAt,
                         openHouseDate: homeResponse.openHouseDate,
                         openHouseEndDate: homeResponse.openHouseEndDate,
                         openHousePaid: homeResponse.openHousePaid,
@@ -686,7 +698,7 @@ struct HomePostView: View {
                         }
                         .buttonStyle(.plain)
 
-                        // Sold/Leased/Pending badge
+                        // Sold/Leased/Pending badge (manual)
                         if let status = soldStatus {
                             Text(status.uppercased())
                                 .font(.system(size: 10, weight: .bold))
@@ -697,6 +709,21 @@ struct HomePostView: View {
                                     status == "sold" ? Color.red :
                                     status == "leased" ? Color.purple :
                                     status == "pending" ? Color.yellow : Color.gray
+                                )
+                                .cornerRadius(4)
+                        }
+
+                        // Listing Status badge (automatic from Zillow API)
+                        if let listingStatus = home.listingStatus, listingStatus != "active" {
+                            Text(listingStatus.uppercased())
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    listingStatus == "sold" ? Color.green :
+                                    listingStatus == "pending" ? Color.orange :
+                                    listingStatus == "off_market" ? Color.red : Color.gray
                                 )
                                 .cornerRadius(4)
                         }
@@ -902,26 +929,14 @@ struct HomePostView: View {
 
                 Spacer()
 
-                // Bookmark button
+                // Bookmark button - Right aligned
                 Button(action: {
                     toggleBookmark()
                 }) {
                     Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                        .font(.title3)
+                        .font(.title2)
                         .foregroundColor(isBookmarked ? .orange : .black)
                 }
-
-                // Message button - COMMENTED OUT (not requested to be re-enabled)
-                // if let profile = home.profile, let currentId = currentUserId, profile.id != currentId {
-                //     Button(action: {
-                //         showChat = true
-                //     }) {
-                //         Image(systemName: "message")
-                //             .font(.title3)
-                //     }
-                // }
-
-                Spacer()
             }
             .foregroundColor(.black)
             .padding(.horizontal)

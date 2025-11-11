@@ -454,18 +454,18 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "Houser needs access to your camera to take photos of properties you want to post.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "We use Face ID to securely sign you in to your \n  account";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Houser uses your location to show you nearby properties and open houses.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Houser needs permission to save property photos to your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Houser needs access to save property photos so you can share them on Instagram and other platforms.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Houser needs access to your photo library to select photos of properties you want to post.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.0;
+				MARKETING_VERSION = 2.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.uglyhomes.Ugly-Homes";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -496,18 +496,18 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "Houser needs access to your camera to take photos of properties you want to post.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "We use Face ID to securely sign you in to your \n  account";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Houser uses your location to show you nearby properties and open houses.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Houser needs permission to save property photos to your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Houser needs access to save property photos so you can share them on Instagram and other platforms.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Houser needs access to your photo library to select photos of properties you want to post.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.0;
+				MARKETING_VERSION = 2.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.uglyhomes.Ugly-Homes";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

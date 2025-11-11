@@ -184,8 +184,8 @@ struct NotificationsView: View {
 struct NotificationRowContent: View {
     let notification: AppNotification
     let triggeredByUserId: UUID?
-    @State private var navigateToProfile = false
-    @State private var navigateToPost = false
+    @State private var selectedProfile: UUID?
+    @State private var selectedPost: Home?
     @State private var post: Home?
     @State private var currentUserId: UUID?
 
@@ -220,7 +220,7 @@ struct NotificationRowContent: View {
                 // Post thumbnail - clickable to navigate to post
                 if let post = post, let imageUrl = post.imageUrls.first {
                     Button(action: {
-                        navigateToPost = true
+                        selectedPost = post
                     }) {
                         AsyncImage(url: URL(string: imageUrl)) { image in
                             image
@@ -247,30 +247,12 @@ struct NotificationRowContent: View {
             }
         }
         .padding(.vertical, 8)
-        .background(
-            Group {
-                // Hidden navigation links
-                if let userId = triggeredByUserId {
-                    NavigationLink(
-                        destination: ProfileView(viewingUserId: userId),
-                        isActive: $navigateToProfile
-                    ) {
-                        EmptyView()
-                    }
-                    .hidden()
-                }
-
-                if let post = post {
-                    NavigationLink(
-                        destination: PostDetailView(home: post, showSoldOptions: false, preloadedUserId: currentUserId),
-                        isActive: $navigateToPost
-                    ) {
-                        EmptyView()
-                    }
-                    .hidden()
-                }
-            }
-        )
+        .navigationDestination(item: $selectedProfile) { userId in
+            ProfileView(viewingUserId: userId)
+        }
+        .navigationDestination(item: $selectedPost) { post in
+            PostDetailView(home: post, showSoldOptions: false, preloadedUserId: currentUserId)
+        }
         .onAppear {
             loadPost()
             loadCurrentUserId()
@@ -367,12 +349,12 @@ struct NotificationRowContent: View {
                 .font(.system(size: 14))
                 .lineLimit(2)
 
-            if triggeredByUserId != nil {
+            if let userId = triggeredByUserId {
                 Text(username)
                     .fontWeight(.bold)
                     .foregroundColor(.clear)
                     .onTapGesture {
-                        navigateToProfile = true
+                        selectedProfile = userId
                     }
             }
         }

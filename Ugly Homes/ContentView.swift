@@ -80,9 +80,19 @@ struct ContentView: View {
                 }
             }
         }
-        // Check if it's a post deep link (e.g., housers.app/home/{id})
-        else if url.path.contains("/home/") {
+        // Check if it's a post deep link (e.g., housers://home/{id})
+        else if url.path.contains("/home/") || url.path.contains("/property/") {
             print("🏠 Post deep link detected")
+            deepLinkManager.handleURL(url)
+        }
+        // Check if it's a profile deep link (e.g., housers://@username or housers://user/username)
+        else if url.path.hasPrefix("/@") || url.path.contains("/user/") || url.host == "user" {
+            print("👤 Profile deep link detected")
+            deepLinkManager.handleURL(url)
+        }
+        // Fallback: try to handle it with DeepLinkManager (handles housers:// scheme)
+        else if url.scheme == "housers" {
+            print("🔗 Housers scheme detected, passing to DeepLinkManager")
             deepLinkManager.handleURL(url)
         }
     }

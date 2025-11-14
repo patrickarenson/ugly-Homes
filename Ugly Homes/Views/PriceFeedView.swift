@@ -31,13 +31,37 @@ struct PriceFeedView: View {
         return Array(tags).sorted()
     }
 
-    // Filter tags based on search
+    // Get all searchable keywords for autocomplete
+    var searchableKeywords: [String] {
+        // Combine actual tags from properties + all keyword mappings
+        var keywords = Set<String>()
+
+        // Add all actual tags (without #)
+        for tag in availableTags {
+            keywords.insert(tag.replacingOccurrences(of: "#", with: ""))
+        }
+
+        // Add all keyword mappings
+        for keywordArray in TagKeywordMapper.keywordMap.values {
+            for keyword in keywordArray {
+                keywords.insert(keyword)
+            }
+        }
+
+        return Array(keywords).sorted()
+    }
+
+    // Filter tags/keywords based on search
     var suggestedTags: [String] {
         guard !tagSearch.isEmpty else { return [] }
         let search = tagSearch.lowercased().replacingOccurrences(of: "#", with: "")
-        return availableTags.filter { tag in
-            tag.lowercased().contains(search) && !selectedTags.contains(tag)
-        }.prefix(5).map { $0 }
+
+        // Search in all keywords
+        let matchingKeywords = searchableKeywords.filter { keyword in
+            keyword.lowercased().contains(search) && !selectedTags.contains(keyword)
+        }
+
+        return Array(matchingKeywords.prefix(5))
     }
 
     enum PriceSortOrder: String, CaseIterable {
@@ -54,18 +78,43 @@ struct PriceFeedView: View {
     var filteredHomes: [Home] {
         var filtered = homes
 
-        // Filter by tags (must match ALL selected tags)
+        // Filter by tags/keywords (must match ALL selected tags)
         if !selectedTags.isEmpty {
             filtered = filtered.filter { home in
                 guard let homeTags = home.tags else { return false }
 
-                // Check if home has ALL selected tags
-                for selectedTag in selectedTags {
-                    let tagLower = selectedTag.lowercased().replacingOccurrences(of: "#", with: "")
-                    let hasTag = homeTags.contains { homeTag in
-                        homeTag.lowercased().contains(tagLower)
+                // Check if home has ALL selected tags/keywords
+                for selectedKeyword in selectedTags {
+                    // Map keyword to actual tag(s) using TagKeywordMapper
+                    let matchingTags = TagKeywordMapper.findMatchingTags(for: selectedKeyword)
+
+                    // Check if home has any of the matching tags
+                    var hasMatchingTag = false
+
+                    // First check direct tag match
+                    let keywordLower = selectedKeyword.lowercased().replacingOccurrences(of: "#", with: "")
+                    for homeTag in homeTags {
+                        let homeTagLower = homeTag.lowercased().replacingOccurrences(of: "#", with: "")
+
+                        // Direct match (e.g., searching "Pool" finds "#Pool")
+                        if homeTagLower == keywordLower || homeTagLower.contains(keywordLower) {
+                            hasMatchingTag = true
+                            break
+                        }
+
+                        // Keyword mapping match (e.g., searching "fixer" finds "#FixerUpper")
+                        for matchingTag in matchingTags {
+                            if homeTagLower == matchingTag.lowercased() {
+                                hasMatchingTag = true
+                                break
+                            }
+                        }
+
+                        if hasMatchingTag { break }
                     }
-                    if !hasTag {
+
+                    // If this keyword/tag wasn't found, filter out this home
+                    if !hasMatchingTag {
                         return false
                     }
                 }
@@ -73,7 +122,7 @@ struct PriceFeedView: View {
             }
         }
 
-        print("🔍 Tags: \(selectedTags) - \(filtered.count) results")
+        print("🔍 Keywords: \(selectedTags) - \(filtered.count) results")
         return filtered
     }
 
@@ -109,7 +158,7 @@ struct PriceFeedView: View {
                                     .cornerRadius(15)
                                 }
 
-                                TextField("Search tags", text: $tagSearch)
+                                TextField("Search by multiple tags", text: $tagSearch)
                                     .textFieldStyle(.plain)
                                     .autocorrectionDisabled()
                                     .autocapitalization(.none)

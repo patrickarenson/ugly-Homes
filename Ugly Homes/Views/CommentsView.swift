@@ -97,6 +97,35 @@ struct CommentsView: View {
                 }
 
                 Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.top, 2)
+
+            // Line 3: Square footage
+            if let sqft = home.livingAreaSqft {
+                Text("\(sqft) sq ft")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                    .padding(.horizontal)
+                    .padding(.top, 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            // Line 4: Listing price
+            if let price = home.price {
+                let priceInt = Int(truncating: price as NSNumber)
+                Text("Listed at \(formatPrice(priceInt))")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                    .padding(.horizontal)
+                    .padding(.top, 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            // Housers Estimate section
+            HStack(spacing: 12) {
+                Spacer()
 
                 // Housers Estimate on right side
                 if home.price != nil {
@@ -134,7 +163,19 @@ struct CommentsView: View {
                 }
                 }
 
-                // Price (Line 3)
+                // Square footage (Line 3)
+                if let sqft = home.livingAreaSqft {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.split.2x2")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        Text("\(formatNumber(sqft)) sq ft")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                }
+
+                // Price (Line 4)
                 if let price = home.price {
                     let priceInt = Int(truncating: price as NSNumber)
                     Text("Listed for $\(formatPrice(priceInt))")
@@ -717,6 +758,13 @@ struct CommentsView: View {
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         return formatter.string(from: NSNumber(value: price)) ?? "\(price)"
+    }
+
+    func formatNumber(_ number: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
     }
 
     // MARK: - @Mention Autocomplete Functions

@@ -21,6 +21,7 @@ struct ProfileView: View {
     @State private var showChat = false
     @State private var showBlockAlert = false
     @State private var showBlockConfirmation = false
+    @State private var showShareSheet = false
 
     init(viewingUserId: UUID? = nil) {
         self.viewingUserId = viewingUserId
@@ -406,46 +407,58 @@ struct ProfileView: View {
         .navigationTitle(isViewingOtherProfile ? (profile?.username ?? "Profile") : "Profile")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // Show menu when viewing own profile
-            if !isViewingOtherProfile {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button(action: {
-                            showEditProfile = true
-                        }) {
-                            Label("Edit Profile", systemImage: "pencil")
-                        }
-
-                        Button(action: {
-                            showAccountSettings = true
-                        }) {
-                            Label("Account Settings", systemImage: "gearshape")
-                        }
-
-                        Button(role: .destructive, action: {
-                            signOut()
-                        }) {
-                            Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
+            // Combined toolbar items for proper alignment
+            ToolbarItem(placement: .navigationBarTrailing) {
+                HStack(alignment: .top, spacing: 16) {
+                    // Share button (always shown)
+                    Button(action: {
+                        showShareSheet = true
+                    }) {
+                        Image(systemName: "square.and.arrow.up")
                             .font(.title3)
+                            .foregroundColor(.orange)
                     }
-                }
-            }
 
-            // Show menu when viewing another user's profile
-            if isViewingOtherProfile {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button(role: .destructive, action: {
-                            showBlockAlert = true
-                        }) {
-                            Label("Block User", systemImage: "hand.raised.fill")
+                    // Show menu when viewing own profile
+                    if !isViewingOtherProfile {
+                        Menu {
+                            Button(action: {
+                                showEditProfile = true
+                            }) {
+                                Label("Edit Profile", systemImage: "pencil")
+                            }
+
+                            Button(action: {
+                                showAccountSettings = true
+                            }) {
+                                Label("Account Settings", systemImage: "gearshape")
+                            }
+
+                            Button(role: .destructive, action: {
+                                signOut()
+                            }) {
+                                Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.title3)
+                                .foregroundColor(.orange)
                         }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.title3)
+                    }
+
+                    // Show menu when viewing another user's profile
+                    if isViewingOtherProfile {
+                        Menu {
+                            Button(role: .destructive, action: {
+                                showBlockAlert = true
+                            }) {
+                                Label("Block User", systemImage: "hand.raised.fill")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.title3)
+                                .foregroundColor(.orange)
+                        }
                     }
                 }
             }
@@ -485,6 +498,11 @@ struct ProfileView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("You have successfully blocked this user. You won't see their posts anymore.")
+        }
+        .sheet(isPresented: $showShareSheet) {
+            if let profile = profile {
+                ActivityViewController(items: [generateProfileURL(username: profile.username)])
+            }
         }
         .onAppear {
             loadProfile()
@@ -692,6 +710,26 @@ struct ProfileView: View {
 
         // Future enhancement: Compare against actual users in same market
         // Can query database for market-based competitive rankings
+    }
+
+    /// Generate shareable profile URL
+    func generateProfileURL(username: String) -> URL {
+        // Use universal link format for better compatibility
+        return URL(string: "https://housers.us/@\(username)")!
+    }
+}
+
+/// Native iOS Activity View Controller for sharing
+struct ActivityViewController: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
+        // No updates needed
     }
 }
 

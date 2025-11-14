@@ -11,6 +11,7 @@ struct MainTabView: View {
     @StateObject private var unreadManager = UnreadMessagesManager()
     @EnvironmentObject var deepLinkManager: DeepLinkManager
     @State private var deepLinkedHome: Home? = nil
+    @State private var deepLinkedProfile: Profile? = nil
     @State private var searchText = ""
     @State private var selectedTab = 0
 
@@ -84,6 +85,11 @@ struct MainTabView: View {
                 loadDeepLinkedPost()
             }
         }
+        .onChange(of: deepLinkManager.shouldShowProfile) { oldValue, newValue in
+            if newValue {
+                loadDeepLinkedProfile()
+            }
+        }
         .fullScreenCover(item: $deepLinkedHome) { home in
             ZStack {
                 ScrollView {
@@ -117,11 +123,28 @@ struct MainTabView: View {
                 .padding(.top, 8)
             }
         }
+        .fullScreenCover(item: $deepLinkedProfile) { profile in
+            NavigationView {
+                ProfileView(viewingUserId: profile.id)
+                    .navigationBarItems(trailing: Button(action: {
+                        deepLinkedProfile = nil
+                        deepLinkManager.clearPendingLink()
+                    }) {
+                        HStack {
+                            Text("Close")
+                                .font(.system(size: 16))
+                            Image(systemName: "xmark")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .foregroundColor(.orange)
+                    })
+            }
+        }
     }
 
     func checkForDeepLink() {
         // Check if user just logged in with a pending deep link
-        if deepLinkManager.pendingHomeId != nil {
+        if deepLinkManager.pendingHomeId != nil || deepLinkManager.pendingUsername != nil {
             deepLinkManager.handlePostLogin()
         }
     }
@@ -153,6 +176,40 @@ struct MainTabView: View {
                 }
             } catch {
                 print("❌ Error loading deep linked post: \(error)")
+                await MainActor.run {
+                    deepLinkManager.clearPendingLink()
+                }
+            }
+        }
+    }
+
+    func loadDeepLinkedProfile() {
+        guard let username = deepLinkManager.pendingUsername else { return }
+
+        Task {
+            do {
+                print("🔄 Loading deep linked profile: @\(username)")
+
+                let response: [Profile] = try await SupabaseManager.shared.client
+                    .from("profiles")
+                    .select()
+                    .eq("username", value: username)
+                    .execute()
+                    .value
+
+                if let profile = response.first {
+                    await MainActor.run {
+                        deepLinkedProfile = profile
+                        print("✅ Deep linked profile loaded: @\(profile.username)")
+                    }
+                } else {
+                    print("❌ Deep linked profile not found: @\(username)")
+                    await MainActor.run {
+                        deepLinkManager.clearPendingLink()
+                    }
+                }
+            } catch {
+                print("❌ Error loading deep linked profile: \(error)")
                 await MainActor.run {
                     deepLinkManager.clearPendingLink()
                 }

@@ -9,11 +9,32 @@ import SwiftUI
 import PhotosUI
 import UIKit
 
+// Struct to hold comprehensive property data from API import
+struct ComprehensivePropertyData {
+    let schoolDistrict: String?
+    let elementarySchool: String?
+    let middleSchool: String?
+    let highSchool: String?
+    let schoolRating: Double?
+    let hoaFee: Double?
+    let lotSizeSqft: Int?
+    let livingAreaSqft: Int?
+    let yearBuilt: Int?
+    let propertyTypeDetail: String?
+    let parkingSpaces: Int?
+    let stories: Int?
+    let heatingType: String?
+    let coolingType: String?
+    let appliancesIncluded: [String]?
+    let additionalDetails: [String: AnyCodable]?
+}
+
 struct CreatePostView: View {
     @Environment(\.dismiss) var dismiss
 
     let editingHome: Home?
 
+    @State private var postType: PostType = .listing
     @State private var listingURL = ""
     @State private var listingType: ListingType = .sale
     @State private var description = ""
@@ -26,6 +47,10 @@ struct CreatePostView: View {
     @State private var state = ""
     @State private var zipCode = ""
     @State private var hideLocation = false
+
+    // Comprehensive property data (from API import)
+    @State private var comprehensiveData: ComprehensivePropertyData?
+
     @State private var selectedImages: [PhotosPickerItem] = []
     @State private var imageData: [Data] = []
     @State private var imageUrls: [String] = []
@@ -44,6 +69,11 @@ struct CreatePostView: View {
     @State private var isProcessingPayment = false
     @State private var showCancelOpenHouseAlert = false
 
+    enum PostType: String, CaseIterable {
+        case listing = "🏠 Property"
+        case project = "🔨 Home Project"
+    }
+
     enum ListingType: String, CaseIterable {
         case sale = "For Sale"
         case rental = "For Rent"
@@ -54,6 +84,21 @@ struct CreatePostView: View {
 
         // Pre-populate fields if editing
         if let home = editingHome {
+            // Use the post_type from the database
+            // Infer post type from database
+            print("🔍 EDIT MODE DEBUG:")
+            print("   - postType from DB: \(home.postType ?? "nil")")
+
+            let inferredType: PostType
+            // Use post_type from database
+            if home.postType == "project" {
+                inferredType = .project
+            } else {
+                inferredType = .listing
+            }
+
+            print("   - Inferred postType: \(inferredType)")
+            _postType = State(initialValue: inferredType)
             _listingType = State(initialValue: home.listingType == "rental" ? .rental : .sale)
             _description = State(initialValue: home.description ?? "")
             _price = State(initialValue: home.price?.description ?? "")
@@ -81,31 +126,60 @@ struct CreatePostView: View {
     var isFormValid: Bool {
         let hasPhotos = !imageData.isEmpty || !imageUrls.isEmpty
         let hasDescription = !description.isEmpty
-        let hasPrice = !price.isEmpty
-        let hasBedrooms = !bedrooms.isEmpty
-        let hasBathrooms = !bathrooms.isEmpty
 
-        // If location is not hidden, address is required
-        let locationValid = hideLocation || !address.isEmpty
+        if postType == .project {
+            // Projects only need: photos, description, city, state
+            let hasLocation = !city.isEmpty && !state.isEmpty
+            return hasPhotos && hasDescription && hasLocation
+        } else {
+            // Listings need: photos, description, price, bedrooms, bathrooms, address (unless hidden)
+            let hasPrice = !price.isEmpty
+            let hasBedrooms = !bedrooms.isEmpty
+            let hasBathrooms = !bathrooms.isEmpty
 
-        return hasPhotos && hasDescription && hasPrice && hasBedrooms && hasBathrooms && locationValid
+            // If location is not hidden, address is required
+            let locationValid = hideLocation || !address.isEmpty
+
+            return hasPhotos && hasDescription && hasPrice && hasBedrooms && hasBathrooms && locationValid
+        }
     }
 
+    // MARK: - Photo Pair Management
+
+    // Total number of photos (both uploaded and new)
+    var totalPhotoCount: Int {
+        return imageUrls.count + imageData.count
+    }
+
+    // Check if two indices form a pair
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    // Quick Import from Zillow
-                    if editingHome == nil {
+                    // Post Type Picker
+                    VStack(alignment: .leading, spacing: 12) {
+                        // Centered toggle buttons
+                        Picker("Post Type", selection: $postType) {
+                            ForEach(PostType.allCases, id: \.self) { type in
+                                Text(type.rawValue).tag(type)
+                            }
+                        }
+                        .pickerStyle(SegmentedPickerStyle())
+                        .disabled(editingHome != nil) // Disable when editing (can't change post type)
+                        .opacity(editingHome != nil ? 0.6 : 1.0) // Show it's disabled
+                    }
+
+                    // Quick Import from Zillow (only for listings)
+                    if editingHome == nil && postType == .listing {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Quick Import")
                                 .font(.system(size: 15, weight: .medium))
-                            Text("Paste a Zillow URL")
+                            Text("Zillow URL auto-fills your details.")
                                 .font(.caption)
                                 .foregroundColor(.gray)
 
                             HStack {
-                                TextField("Paste listing URL here", text: $listingURL)
+                                TextField("Paste Zillow URL here", text: $listingURL)
                                     .padding()
                                     .background(Color(.systemGray6))
                                     .cornerRadius(8)
@@ -150,23 +224,24 @@ struct CreatePostView: View {
                         Divider()
                     }
 
-                    // Listing Type Picker
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Listing Type")
-                            .font(.system(size: 15, weight: .medium))
-                        Picker("Type", selection: $listingType) {
-                            ForEach(ListingType.allCases, id: \.self) { type in
-                                Text(type.rawValue).tag(type)
+                    // Listing Type Picker (only for listings)
+                    if postType == .listing {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Listing Type")
+                                .font(.system(size: 15, weight: .medium))
+                            Picker("Type", selection: $listingType) {
+                                ForEach(ListingType.allCases, id: \.self) { type in
+                                    Text(type.rawValue).tag(type)
+                                }
                             }
+                            .pickerStyle(SegmentedPickerStyle())
                         }
-                        .pickerStyle(SegmentedPickerStyle())
                     }
-
                     // Image picker
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Photos")
+                        Text(postType == .project ? "Before and After Photos" : "Photos")
                             .font(.system(size: 15, weight: .medium))
-                        Text("Select up to 15 photos (at least 1 required)")
+                        Text(postType == .project ? "Upload in pairs: before, after, before, after. Tap arrows to unpair." : "Tap to upload listing photos (up to 15)")
                             .font(.caption)
                             .foregroundColor(.gray)
 
@@ -194,112 +269,75 @@ struct CreatePostView: View {
                             } else {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 10) {
-                                        // Show imported URL images with controls
-                                        ForEach(0..<imageUrls.count, id: \.self) { index in
-                                            ZStack(alignment: .topTrailing) {
-                                                AsyncImage(url: URL(string: imageUrls[index])) { image in
-                                                    image
-                                                        .resizable()
-                                                        .aspectRatio(contentMode: .fill)
-                                                        .frame(width: 150, height: 150)
-                                                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                                                } placeholder: {
-                                                    RoundedRectangle(cornerRadius: 12)
-                                                        .fill(Color.gray.opacity(0.2))
-                                                        .frame(width: 150, height: 150)
-                                                        .overlay(ProgressView())
-                                                }
-
-                                                // Delete button
-                                                Button(action: {
-                                                    imageUrls.remove(at: index)
-                                                }) {
-                                                    Image(systemName: "xmark.circle.fill")
-                                                        .foregroundColor(.white)
-                                                        .background(Circle().fill(Color.black.opacity(0.6)))
-                                                        .font(.title3)
-                                                }
-                                                .padding(8)
-
-                                                // Photo number badge and reorder controls
-                                                VStack {
-                                                    Spacer()
-                                                    HStack(spacing: 4) {
-                                                        // Move left button
-                                                        if index > 0 {
-                                                            Button(action: {
-                                                                imageUrls.swapAt(index, index - 1)
-                                                            }) {
-                                                                Image(systemName: "chevron.left.circle.fill")
-                                                                    .foregroundColor(.white)
-                                                                    .background(Circle().fill(Color.orange.opacity(0.8)))
-                                                                    .font(.title3)
-                                                            }
-                                                        }
-
-                                                        Text("\(index + 1)")
-                                                            .font(.caption2)
-                                                            .fontWeight(.bold)
-                                                            .foregroundColor(.white)
-                                                            .padding(6)
-                                                            .background(Circle().fill(Color.black.opacity(0.6)))
-
-                                                        // Move right button
-                                                        if index < imageUrls.count - 1 {
-                                                            Button(action: {
-                                                                imageUrls.swapAt(index, index + 1)
-                                                            }) {
-                                                                Image(systemName: "chevron.right.circle.fill")
-                                                                    .foregroundColor(.white)
-                                                                    .background(Circle().fill(Color.orange.opacity(0.8)))
-                                                                    .font(.title3)
-                                                            }
-                                                        }
+                                        // Iterate through all photos and show arrows between consecutive pairs for projects
+                                        ForEach(0..<totalPhotoCount, id: \.self) { photoIndex in
+                                            // Show the photo
+                                            ZStack {
+                                                // Display either URL or Data image based on index
+                                                if photoIndex < imageUrls.count {
+                                                    // Show URL image
+                                                    AsyncImage(url: URL(string: imageUrls[photoIndex])) { image in
+                                                        image
+                                                            .resizable()
+                                                            .aspectRatio(contentMode: .fill)
+                                                            .frame(width: 150, height: 150)
+                                                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                                                    } placeholder: {
+                                                        RoundedRectangle(cornerRadius: 12)
+                                                            .fill(Color.gray.opacity(0.2))
+                                                            .frame(width: 150, height: 150)
+                                                            .overlay(ProgressView())
                                                     }
-                                                    .padding(8)
-                                                }
-                                            }
-                                            .frame(width: 150, height: 150)
-                                        }
-
-                                        // Show locally selected images with controls
-                                        ForEach(0..<imageData.count, id: \.self) { index in
-                                            ZStack(alignment: .topTrailing) {
-                                                if let uiImage = UIImage(data: imageData[index]) {
-                                                    Image(uiImage: uiImage)
-                                                        .resizable()
-                                                        .aspectRatio(contentMode: .fill)
-                                                        .frame(width: 150, height: 150)
-                                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                                                } else {
+                                                    // Show Data image
+                                                    let dataIndex = photoIndex - imageUrls.count
+                                                    if let uiImage = UIImage(data: imageData[dataIndex]) {
+                                                        Image(uiImage: uiImage)
+                                                            .resizable()
+                                                            .aspectRatio(contentMode: .fill)
+                                                            .frame(width: 150, height: 150)
+                                                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                                                    }
                                                 }
 
-                                                // Delete button
-                                                Button(action: {
-                                                    imageData.remove(at: index)
-                                                    selectedImages.remove(at: index)
-                                                }) {
-                                                    Image(systemName: "xmark.circle.fill")
-                                                        .foregroundColor(.white)
-                                                        .background(Circle().fill(Color.black.opacity(0.6)))
-                                                        .font(.title3)
+                                                // Delete button (top-right)
+                                                VStack {
+                                                    HStack {
+                                                        Spacer()
+                                                        Button(action: {
+                                                            if photoIndex < imageUrls.count {
+                                                                imageUrls.remove(at: photoIndex)
+                                                            } else {
+                                                                let dataIndex = photoIndex - imageUrls.count
+                                                                imageData.remove(at: dataIndex)
+                                                                selectedImages.remove(at: dataIndex)
+                                                            }
+                                                        }) {
+                                                            Image(systemName: "xmark.circle.fill")
+                                                                .foregroundColor(.white)
+                                                                .background(Circle().fill(Color.black.opacity(0.6)))
+                                                                .font(.title3)
+                                                        }
+                                                        .padding(8)
+                                                    }
+                                                    Spacer()
                                                 }
-                                                .padding(8)
 
                                                 // Photo number badge and reorder controls
                                                 VStack {
                                                     Spacer()
                                                     HStack(spacing: 4) {
                                                         // Move left button
-                                                        if index > 0 || imageUrls.count > 0 {
+                                                        if photoIndex > 0 {
                                                             Button(action: {
-                                                                if index > 0 {
-                                                                    imageData.swapAt(index, index - 1)
-                                                                    selectedImages.swapAt(index, index - 1)
-                                                                } else if imageUrls.count > 0 {
-                                                                    // Move from imageData to end of imageUrls
-                                                                    _ = imageData.remove(at: index)
-                                                                    selectedImages.remove(at: index)
-                                                                    imageUrls.append("")  // placeholder for now
+                                                                if photoIndex < imageUrls.count && photoIndex - 1 < imageUrls.count {
+                                                                    imageUrls.swapAt(photoIndex, photoIndex - 1)
+                                                                } else if photoIndex >= imageUrls.count {
+                                                                    let dataIndex = photoIndex - imageUrls.count
+                                                                    if dataIndex > 0 {
+                                                                        imageData.swapAt(dataIndex, dataIndex - 1)
+                                                                        selectedImages.swapAt(dataIndex, dataIndex - 1)
+                                                                    }
                                                                 }
                                                             }) {
                                                                 Image(systemName: "chevron.left.circle.fill")
@@ -309,7 +347,7 @@ struct CreatePostView: View {
                                                             }
                                                         }
 
-                                                        Text("\(imageUrls.count + index + 1)")
+                                                        Text("\(photoIndex + 1)")
                                                             .font(.caption2)
                                                             .fontWeight(.bold)
                                                             .foregroundColor(.white)
@@ -317,10 +355,17 @@ struct CreatePostView: View {
                                                             .background(Circle().fill(Color.black.opacity(0.6)))
 
                                                         // Move right button
-                                                        if index < imageData.count - 1 {
+                                                        if photoIndex < totalPhotoCount - 1 {
                                                             Button(action: {
-                                                                imageData.swapAt(index, index + 1)
-                                                                selectedImages.swapAt(index, index + 1)
+                                                                if photoIndex < imageUrls.count - 1 {
+                                                                    imageUrls.swapAt(photoIndex, photoIndex + 1)
+                                                                } else if photoIndex >= imageUrls.count {
+                                                                    let dataIndex = photoIndex - imageUrls.count
+                                                                    if dataIndex < imageData.count - 1 {
+                                                                        imageData.swapAt(dataIndex, dataIndex + 1)
+                                                                        selectedImages.swapAt(dataIndex, dataIndex + 1)
+                                                                    }
+                                                                }
                                                             }) {
                                                                 Image(systemName: "chevron.right.circle.fill")
                                                                     .foregroundColor(.white)
@@ -336,7 +381,7 @@ struct CreatePostView: View {
                                         }
 
                                         // Add more button (only show if less than 15 photos total)
-                                        if (imageUrls.count + imageData.count) < 15 {
+                                        if totalPhotoCount < 15 {
                                             PhotosPicker(
                                                 selection: $selectedImages,
                                                 maxSelectionCount: 15,
@@ -383,46 +428,59 @@ struct CreatePostView: View {
 
                     // Description
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Description")
+                        Text(postType == .project ? "Project Story" : "Description")
                             .font(.system(size: 15, weight: .medium))
-                        TextEditor(text: $description)
-                            .frame(height: 100)
-                            .padding(4)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(8)
+                        ZStack(alignment: .topLeading) {
+                            TextEditor(text: $description)
+                                .frame(height: 100)
+                                .padding(4)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
+
+                            // Placeholder text
+                            if description.isEmpty {
+                                Text(postType == .project ? "Tell us what you're working on — what inspired it, what's next?" : "Highlight key features, upgrades, and neighborhood perks.")
+                                    .foregroundColor(.gray.opacity(0.6))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 12)
+                                    .allowsHitTesting(false)
+                            }
+                        }
                     }
 
-                    // Price
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Price")
-                            .font(.system(size: 15, weight: .medium))
-                        TextField("$0", text: $price)
-                            .keyboardType(.numberPad)
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(8)
-                    }
-
-                    // Bedrooms and Bathrooms
-                    HStack(spacing: 12) {
+                    // Price (only for listings)
+                    if postType == .listing {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Bedrooms")
+                            Text("Price")
                                 .font(.system(size: 15, weight: .medium))
-                            TextField("0", text: $bedrooms)
+                            TextField("$0", text: $price)
                                 .keyboardType(.numberPad)
                                 .padding()
                                 .background(Color(.systemGray6))
                                 .cornerRadius(8)
                         }
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Bathrooms")
-                                .font(.system(size: 15, weight: .medium))
-                            TextField("0", text: $bathrooms)
-                                .keyboardType(.decimalPad)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
+                        // Bedrooms and Bathrooms
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Bedrooms")
+                                    .font(.system(size: 15, weight: .medium))
+                                TextField("0", text: $bedrooms)
+                                    .keyboardType(.numberPad)
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(8)
+                            }
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Bathrooms")
+                                    .font(.system(size: 15, weight: .medium))
+                                TextField("0", text: $bathrooms)
+                                    .keyboardType(.decimalPad)
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(8)
+                            }
                         }
                     }
 
@@ -431,41 +489,8 @@ struct CreatePostView: View {
                         Text("Location")
                             .font(.system(size: 15, weight: .medium))
 
-                        // Hide location toggle
-                        HStack(spacing: 8) {
-                            Button(action: {
-                                hideLocation.toggle()
-                                if hideLocation {
-                                    // Clear location fields when hiding
-                                    address = ""
-                                    city = ""
-                                    state = ""
-                                    zipCode = ""
-                                }
-                            }) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: hideLocation ? "checkmark.circle.fill" : "circle")
-                                        .foregroundColor(hideLocation ? .orange : .gray)
-                                    Text("Hide location")
-                                        .font(.subheadline)
-                                        .foregroundColor(.primary)
-                                }
-                            }
-                        }
-                        .padding(.bottom, 4)
-
-                        // Only show address fields if location is not hidden
-                        if !hideLocation {
-                            TextField("Address", text: $address)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
-
-                            TextField("Unit / Apt # (optional)", text: $unit)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
-
+                        if postType == .project {
+                            // Projects only need city and state
                             HStack {
                                 TextField("City", text: $city)
                                     .padding()
@@ -478,12 +503,62 @@ struct CreatePostView: View {
                                     .cornerRadius(8)
                                     .frame(maxWidth: 100)
                             }
+                        } else {
+                            // Listings show full address fields with hide location toggle
+                            // Hide location toggle
+                            HStack(spacing: 8) {
+                                Button(action: {
+                                    hideLocation.toggle()
+                                    if hideLocation {
+                                        // Clear location fields when hiding
+                                        address = ""
+                                        city = ""
+                                        state = ""
+                                        zipCode = ""
+                                    }
+                                }) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: hideLocation ? "checkmark.circle.fill" : "circle")
+                                            .foregroundColor(hideLocation ? .orange : .gray)
+                                        Text("Hide location")
+                                            .font(.subheadline)
+                                            .foregroundColor(.primary)
+                                    }
+                                }
+                            }
+                            .padding(.bottom, 4)
 
-                            TextField("Zip Code", text: $zipCode)
-                                .keyboardType(.numberPad)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
+                            // Only show address fields if location is not hidden
+                            if !hideLocation {
+                                TextField("Address", text: $address)
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(8)
+
+                                TextField("Unit / Apt # (optional)", text: $unit)
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(8)
+
+                                HStack {
+                                    TextField("City", text: $city)
+                                        .padding()
+                                        .background(Color(.systemGray6))
+                                        .cornerRadius(8)
+
+                                    TextField("State", text: $state)
+                                        .padding()
+                                        .background(Color(.systemGray6))
+                                        .cornerRadius(8)
+                                        .frame(maxWidth: 100)
+                                }
+
+                                TextField("Zip Code", text: $zipCode)
+                                    .keyboardType(.numberPad)
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(8)
+                            }
                         }
                     }
 
@@ -603,6 +678,15 @@ struct CreatePostView: View {
                     }
                     */
 
+                    // Informational text before Post button
+                    if editingHome == nil {
+                        Text("Your post will appear on the Houser feed — get feedback, followers, and ideas from other real estate lovers.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 8)
+                    }
+
                     // Post button
                     Button(action: editingHome == nil ? createPost : updatePost) {
                         if isUploading {
@@ -631,7 +715,7 @@ struct CreatePostView: View {
                 }
                 .padding()
             }
-            .navigationTitle(editingHome == nil ? "New Property" : "Edit Property")
+            .navigationTitle(editingHome == nil ? "New Post" : (postType == .project ? "Edit Project" : "Edit Property"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -747,10 +831,67 @@ struct CreatePostView: View {
                     let description: String?
                     let images: [String]?
                     let listingType: String?
+
+                    // Comprehensive property data
+                    let schoolDistrict: String?
+                    let elementarySchool: String?
+                    let middleSchool: String?
+                    let highSchool: String?
+                    let schoolRating: Double?
+                    let hoaFee: Double?
+                    let lotSizeSqft: Int?
+                    let livingAreaSqft: Int?
+                    let yearBuilt: Int?
+                    let propertyTypeDetail: String?
+                    let parkingSpaces: Int?
+                    let stories: Int?
+                    let heatingType: String?
+                    let coolingType: String?
+                    let appliancesIncluded: [String]?
+                    let additionalDetails: [String: AnyCodable]?
                 }
 
-                let scraped = try JSONDecoder().decode(ScrapedListing.self, from: data)
-                print("✅ Successfully parsed listing data")
+                // Log raw JSON response for debugging
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("📦 Raw API Response:")
+                    print(jsonString)
+                } else {
+                    print("⚠️ Could not convert response data to string")
+                }
+
+                // Attempt to decode with detailed error handling
+                let scraped: ScrapedListing
+                do {
+                    scraped = try JSONDecoder().decode(ScrapedListing.self, from: data)
+                    print("✅ Successfully parsed listing data")
+                } catch let DecodingError.keyNotFound(key, context) {
+                    print("❌ Decoding Error - Key not found:")
+                    print("  Missing key: \(key.stringValue)")
+                    print("  Context: \(context.debugDescription)")
+                    print("  Coding path: \(context.codingPath.map { $0.stringValue }.joined(separator: " -> "))")
+                    throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Missing required field: \(key.stringValue)"])
+                } catch let DecodingError.typeMismatch(type, context) {
+                    print("❌ Decoding Error - Type mismatch:")
+                    print("  Expected type: \(type)")
+                    print("  Context: \(context.debugDescription)")
+                    print("  Coding path: \(context.codingPath.map { $0.stringValue }.joined(separator: " -> "))")
+                    throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Wrong data type at: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))"])
+                } catch let DecodingError.valueNotFound(type, context) {
+                    print("❌ Decoding Error - Value not found:")
+                    print("  Expected type: \(type)")
+                    print("  Context: \(context.debugDescription)")
+                    print("  Coding path: \(context.codingPath.map { $0.stringValue }.joined(separator: " -> "))")
+                    throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Missing value at: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))"])
+                } catch let DecodingError.dataCorrupted(context) {
+                    print("❌ Decoding Error - Data corrupted:")
+                    print("  Context: \(context.debugDescription)")
+                    print("  Coding path: \(context.codingPath.map { $0.stringValue }.joined(separator: " -> "))")
+                    throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid JSON data at: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))"])
+                } catch {
+                    print("❌ Unknown decoding error: \(error)")
+                    print("  Error description: \(error.localizedDescription)")
+                    throw NSError(domain: "ImportError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Could not parse property data: \(error.localizedDescription)"])
+                }
 
                 // Populate form fields
                 var fieldsPopulated = 0
@@ -812,6 +953,27 @@ struct CreatePostView: View {
                     fieldsPopulated += 1
                     print("🏠 Listing type: \(type)")
                 }
+
+                // Store comprehensive property data
+                self.comprehensiveData = ComprehensivePropertyData(
+                    schoolDistrict: scraped.schoolDistrict,
+                    elementarySchool: scraped.elementarySchool,
+                    middleSchool: scraped.middleSchool,
+                    highSchool: scraped.highSchool,
+                    schoolRating: scraped.schoolRating,
+                    hoaFee: scraped.hoaFee,
+                    lotSizeSqft: scraped.lotSizeSqft,
+                    livingAreaSqft: scraped.livingAreaSqft,
+                    yearBuilt: scraped.yearBuilt,
+                    propertyTypeDetail: scraped.propertyTypeDetail,
+                    parkingSpaces: scraped.parkingSpaces,
+                    stories: scraped.stories,
+                    heatingType: scraped.heatingType,
+                    coolingType: scraped.coolingType,
+                    appliancesIncluded: scraped.appliancesIncluded,
+                    additionalDetails: scraped.additionalDetails
+                )
+                print("📊 Stored comprehensive property data")
 
                     // Success! Show results and break out of retry loop
                     isImporting = false
@@ -963,36 +1125,89 @@ struct CreatePostView: View {
                     uploadProgress = ""
                 }
 
-                // Generate title from address or price
+                // Generate title from address or price (or city/state for projects)
                 let generatedTitle: String
-                if !address.isEmpty {
-                    generatedTitle = address
-                } else if !price.isEmpty {
-                    generatedTitle = "$\(price) \(listingType.rawValue)"
-                } else if !city.isEmpty && !state.isEmpty {
-                    generatedTitle = "\(city), \(state)"
+                if postType == .project {
+                    // Projects use city, state as title
+                    if !city.isEmpty && !state.isEmpty {
+                        generatedTitle = "\(city), \(state)"
+                    } else if !city.isEmpty {
+                        generatedTitle = city
+                    } else {
+                        generatedTitle = "Project Showcase"
+                    }
                 } else {
-                    generatedTitle = listingType.rawValue
+                    // Listings use address or price
+                    if !address.isEmpty {
+                        generatedTitle = address
+                    } else if !price.isEmpty {
+                        generatedTitle = "$\(price) \(listingType.rawValue)"
+                    } else if !city.isEmpty && !state.isEmpty {
+                        generatedTitle = "\(city), \(state)"
+                    } else {
+                        generatedTitle = listingType.rawValue
+                    }
                 }
 
                 // Generate hashtags
-                let priceDecimal: Decimal? = {
-                    guard !price.isEmpty, let priceDouble = Double(price) else { return nil }
-                    return Decimal(priceDouble)
-                }()
+                var generatedTags: [String] = []
 
-                var generatedTags = TagGenerator.generateTags(
-                    city: city.isEmpty ? nil : city,
-                    price: priceDecimal,
-                    bedrooms: bedrooms.isEmpty ? nil : Int(bedrooms),
-                    title: generatedTitle,
-                    description: description.isEmpty ? nil : description,
-                    listingType: listingType == .rental ? "rental" : "sale"
-                )
+                if postType == .project {
+                    // For projects, generate project-specific tags
+                    generatedTags.append("#HomeProject")
 
-                // Add invisible #OpenHouse tag for searchability
-                if enableOpenHouse && hasOpenHousePaid {
-                    generatedTags.append("#OpenHouse")
+                    // Add location tags
+                    if !city.isEmpty {
+                        generatedTags.append("#\(city.replacingOccurrences(of: " ", with: ""))")
+                    }
+                    if !state.isEmpty {
+                        generatedTags.append("#\(state.replacingOccurrences(of: " ", with: ""))")
+                    }
+
+                    // Extract project keywords from description
+                    let descriptionLower = description.lowercased()
+                    let projectKeywords = [
+                        ("renovation", "#Renovation"),
+                        ("remodel", "#Remodel"),
+                        ("flip", "#HouseFlip"),
+                        ("diy", "#DIY"),
+                        ("kitchen", "#KitchenReno"),
+                        ("bathroom", "#BathroomReno"),
+                        ("basement", "#BasementReno"),
+                        ("exterior", "#ExteriorReno"),
+                        ("landscaping", "#Landscaping"),
+                        ("flooring", "#Flooring"),
+                        ("paint", "#Painting"),
+                        ("demo", "#Demolition"),
+                        ("before and after", "#BeforeAndAfter"),
+                        ("fixer", "#FixerUpper")
+                    ]
+
+                    for (keyword, tag) in projectKeywords {
+                        if descriptionLower.contains(keyword) && !generatedTags.contains(tag) {
+                            generatedTags.append(tag)
+                        }
+                    }
+                } else {
+                    // For listings, use existing tag generation
+                    let priceDecimal: Decimal? = {
+                        guard !price.isEmpty, let priceDouble = Double(price) else { return nil }
+                        return Decimal(priceDouble)
+                    }()
+
+                    generatedTags = TagGenerator.generateTags(
+                        city: city.isEmpty ? nil : city,
+                        price: priceDecimal,
+                        bedrooms: bedrooms.isEmpty ? nil : Int(bedrooms),
+                        title: generatedTitle,
+                        description: description.isEmpty ? nil : description,
+                        listingType: listingType == .rental ? "rental" : "sale"
+                    )
+
+                    // Add invisible #OpenHouse tag for searchability
+                    if enableOpenHouse && hasOpenHousePaid {
+                        generatedTags.append("#OpenHouse")
+                    }
                 }
 
                 print("🏷️ Generated tags: \(generatedTags)")
@@ -1001,7 +1216,8 @@ struct CreatePostView: View {
                 struct NewHome: Encodable {
                     let user_id: String
                     let title: String
-                    let listing_type: String
+                    let post_type: String
+                    let listing_type: String?
                     let description: String?
                     let price: String?
                     let bedrooms: Int?
@@ -1012,6 +1228,8 @@ struct CreatePostView: View {
                     let state: String?
                     let zip_code: String?
                     let image_urls: [String]
+                    let before_photos: [String]?
+                    let photo_pairs: [[Int]]?
                     let tags: [String]
                     let is_active: Bool
                     let requires_review: Bool?
@@ -1020,12 +1238,31 @@ struct CreatePostView: View {
                     let open_house_end_date: Date?
                     let open_house_paid: Bool?
                     let stripe_payment_id: String?
+
+                    // Comprehensive property data
+                    let school_district: String?
+                    let elementary_school: String?
+                    let middle_school: String?
+                    let high_school: String?
+                    let school_rating: Double?
+                    let hoa_fee: Double?
+                    let lot_size_sqft: Int?
+                    let living_area_sqft: Int?
+                    let year_built: Int?
+                    let property_type_detail: String?
+                    let parking_spaces: Int?
+                    let stories: Int?
+                    let heating_type: String?
+                    let cooling_type: String?
+                    let appliances_included: [String]?
+                    let additional_details: [String: AnyCodable]?
                 }
 
                 let newHome = NewHome(
                     user_id: userId.uuidString,
                     title: generatedTitle,
-                    listing_type: listingType == .sale ? "sale" : "rental",
+                    post_type: postType == .project ? "project" : "listing",
+                    listing_type: postType == .listing ? (listingType == .sale ? "sale" : "rental") : nil,
                     description: description.isEmpty ? nil : description,
                     price: price.isEmpty ? nil : price,
                     bedrooms: bedrooms.isEmpty ? nil : Int(bedrooms),
@@ -1036,6 +1273,8 @@ struct CreatePostView: View {
                     state: state.isEmpty ? nil : state,
                     zip_code: zipCode.isEmpty ? nil : zipCode,
                     image_urls: finalImageUrls,
+                    before_photos: nil,  // Deprecated
+                    photo_pairs: nil,  // Deprecated (before/after photos feature removed)
                     tags: generatedTags,
                     is_active: true,
                     requires_review: requiresReview ? true : nil,
@@ -1043,7 +1282,25 @@ struct CreatePostView: View {
                     open_house_date: (enableOpenHouse && hasOpenHousePaid) ? openHouseDate : nil,
                     open_house_end_date: (enableOpenHouse && hasOpenHousePaid) ? openHouseEndDate : nil,
                     open_house_paid: (enableOpenHouse && hasOpenHousePaid) ? true : nil,
-                    stripe_payment_id: (enableOpenHouse && hasOpenHousePaid) ? stripePaymentId : nil
+                    stripe_payment_id: (enableOpenHouse && hasOpenHousePaid) ? stripePaymentId : nil,
+
+                    // Comprehensive property data from API import
+                    school_district: comprehensiveData?.schoolDistrict,
+                    elementary_school: comprehensiveData?.elementarySchool,
+                    middle_school: comprehensiveData?.middleSchool,
+                    high_school: comprehensiveData?.highSchool,
+                    school_rating: comprehensiveData?.schoolRating,
+                    hoa_fee: comprehensiveData?.hoaFee,
+                    lot_size_sqft: comprehensiveData?.lotSizeSqft,
+                    living_area_sqft: comprehensiveData?.livingAreaSqft,
+                    year_built: comprehensiveData?.yearBuilt,
+                    property_type_detail: comprehensiveData?.propertyTypeDetail,
+                    parking_spaces: comprehensiveData?.parkingSpaces,
+                    stories: comprehensiveData?.stories,
+                    heating_type: comprehensiveData?.heatingType,
+                    cooling_type: comprehensiveData?.coolingType,
+                    appliances_included: comprehensiveData?.appliancesIncluded,
+                    additional_details: comprehensiveData?.additionalDetails
                 )
 
                 let response: [Home] = try await SupabaseManager.shared.client
@@ -1170,7 +1427,8 @@ struct CreatePostView: View {
                 // Update home post
                 struct UpdateHome: Encodable {
                     let title: String
-                    let listing_type: String
+                    let post_type: String
+                    let listing_type: String?
                     let description: String?
                     let price: String?
                     let bedrooms: Int?
@@ -1181,11 +1439,14 @@ struct CreatePostView: View {
                     let state: String?
                     let zip_code: String?
                     let image_urls: [String]
+                    let before_photos: [String]?
+                    let photo_pairs: [[Int]]?
                 }
 
                 let updateData = UpdateHome(
                     title: generatedTitle,
-                    listing_type: listingType == .sale ? "sale" : "rental",
+                    post_type: postType == .project ? "project" : "listing",
+                    listing_type: postType == .listing ? (listingType == .sale ? "sale" : "rental") : nil,
                     description: description.isEmpty ? nil : description,
                     price: price.isEmpty ? nil : price,
                     bedrooms: bedrooms.isEmpty ? nil : Int(bedrooms),
@@ -1195,7 +1456,9 @@ struct CreatePostView: View {
                     city: city.isEmpty ? nil : city,
                     state: state.isEmpty ? nil : state,
                     zip_code: zipCode.isEmpty ? nil : zipCode,
-                    image_urls: finalImageUrls
+                    image_urls: finalImageUrls,
+                    before_photos: nil,  // Deprecated
+                    photo_pairs: nil  // Deprecated (before/after photos feature removed)
                 )
 
                 try await SupabaseManager.shared.client

@@ -317,6 +317,7 @@ struct FeedView: View {
                     let id: UUID
                     let userId: UUID
                     let title: String
+                    let postType: String?
                     let listingType: String?
                     let description: String?
                     let price: Decimal?
@@ -351,6 +352,7 @@ struct FeedView: View {
                         case id
                         case userId = "user_id"
                         case title
+                        case postType = "post_type"
                         case listingType = "listing_type"
                         case description
                         case price
@@ -477,6 +479,8 @@ struct FeedView: View {
                         listingStatus: homeResponse.listingStatus,
                         zpid: homeResponse.zpid,
                         statusUpdatedAt: homeResponse.statusUpdatedAt,
+                        statusCheckedAt: nil,
+                        customDescription: nil,
                         openHouseDate: homeResponse.openHouseDate,
                         openHouseEndDate: homeResponse.openHouseEndDate,
                         openHousePaid: homeResponse.openHousePaid,
@@ -484,6 +488,24 @@ struct FeedView: View {
                         subscriptionId: homeResponse.subscriptionId,
                         expiresAt: homeResponse.expiresAt,
                         tags: homeResponse.tags,
+                        postType: homeResponse.postType,
+                        beforePhotos: nil,
+                        schoolDistrict: nil,
+                        elementarySchool: nil,
+                        middleSchool: nil,
+                        highSchool: nil,
+                        schoolRating: nil,
+                        hoaFee: nil,
+                        lotSizeSqft: nil,
+                        livingAreaSqft: nil,
+                        yearBuilt: nil,
+                        propertyTypeDetail: nil,
+                        parkingSpaces: nil,
+                        stories: nil,
+                        heatingType: nil,
+                        coolingType: nil,
+                        appliancesIncluded: nil,
+                        additionalDetails: nil,
                         createdAt: homeResponse.createdAt,
                         updatedAt: homeResponse.updatedAt
                     )
@@ -785,37 +807,38 @@ struct HomePostView: View {
                 GeometryReader { geometry in
                     ZStack {
                         TabView(selection: $currentPhotoIndex) {
-                            ForEach(Array(home.imageUrls.enumerated()), id: \.offset) { index, imageUrl in
-                                AsyncImage(url: URL(string: imageUrl)) { image in
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(width: geometry.size.width, height: geometry.size.height)
-                                        .clipped()
-                                } placeholder: {
-                                    Rectangle()
-                                        .fill(Color.gray.opacity(0.2))
-                                        .frame(width: geometry.size.width, height: geometry.size.height)
-                                        .overlay(ProgressView())
-                                }
-                                .tag(index)
-                                .onTapGesture(count: 2) {
-                                    // Double tap to like
-                                    if !isLiked {
-                                        toggleLike()
+                            // Regular photo carousel
+                                ForEach(Array(home.imageUrls.enumerated()), id: \.offset) { index, imageUrl in
+                                    AsyncImage(url: URL(string: imageUrl)) { image in
+                                        image
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                            .frame(width: geometry.size.width, height: geometry.size.height)
+                                            .clipped()
+                                    } placeholder: {
+                                        Rectangle()
+                                            .fill(Color.gray.opacity(0.2))
+                                            .frame(width: geometry.size.width, height: geometry.size.height)
+                                            .overlay(ProgressView())
                                     }
-                                    // Show heart animation
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                                        showHeartAnimation = true
-                                    }
-                                    // Hide after animation
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                                        withAnimation {
-                                            showHeartAnimation = false
+                                    .tag(index)
+                                    .onTapGesture(count: 2) {
+                                        // Double tap to like
+                                        if !isLiked {
+                                            toggleLike()
+                                        }
+                                        // Show heart animation
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                            showHeartAnimation = true
+                                        }
+                                        // Hide after animation
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                            withAnimation {
+                                                showHeartAnimation = false
+                                            }
                                         }
                                     }
                                 }
-                            }
                         }
                         .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
 
@@ -943,7 +966,7 @@ struct HomePostView: View {
             .padding(.top, 20)
             .padding(.bottom, 8)
 
-            // Property details (bed/bath/price)
+            // Row 1: Username + Bed + Bath + Price (all on same line)
             HStack(spacing: 12) {
                 // Username (clickable to profile)
                 NavigationLink(destination: ProfileView(viewingUserId: home.userId)) {
@@ -989,9 +1012,22 @@ struct HomePostView: View {
                 Spacer()
             }
             .padding(.horizontal)
-            .padding(.top, 2)
 
-            // View comments button
+            // Row 2: Description preview (black color, tap to open comments)
+            if let description = home.description, !description.isEmpty {
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundColor(.black)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.top, 4)
+                    .onTapGesture {
+                        showComments = true
+                    }
+            }
+
+            // Row 3: View comments button
             if home.commentsCount > 0 {
                 Button(action: {
                     showComments = true
@@ -1000,6 +1036,7 @@ struct HomePostView: View {
                         .font(.subheadline)
                         .foregroundColor(.gray)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
                 .padding(.top, 4)
             }
@@ -1042,9 +1079,11 @@ struct HomePostView: View {
         }
         .confirmationDialog("Post Options", isPresented: $showMenu, titleVisibility: .hidden) {
             let _ = print("🔧 Menu opened - currentUserId: \(currentUserId?.uuidString ?? "nil"), homeUserId: \(home.userId.uuidString), showSoldOptions: \(showSoldOptions), soldStatus: \(soldStatus ?? "nil")")
+            let _ = print("🔧 DEBUG: home.postType = \(home.postType ?? "nil")")
             // Only show edit/delete if current user owns the post
             if currentUserId == home.userId {
                 Button("Edit Post") {
+                    print("📝 Edit Post tapped - postType: \(home.postType ?? "nil")")
                     showEditPost = true
                 }
 
@@ -1605,6 +1644,7 @@ struct HomePostView: View {
                 print("📢 Reporting post - Reason: \(reason)")
 
                 struct ReportData: Encodable {
+                    let id: String
                     let home_id: String
                     let reporter_id: String
                     let reported_user_id: String
@@ -1612,7 +1652,9 @@ struct HomePostView: View {
                     let status: String
                 }
 
+                let reportId = UUID()
                 let report = ReportData(
+                    id: reportId.uuidString,
                     home_id: home.id.uuidString,
                     reporter_id: reporterId.uuidString,
                     reported_user_id: home.userId.uuidString,
@@ -1625,7 +1667,35 @@ struct HomePostView: View {
                     .insert(report)
                     .execute()
 
-                print("✅ Post reported successfully")
+                print("✅ Post reported successfully, sending notification...")
+
+                // Send email notification to admin
+                Task.detached {
+                    do {
+                        // Call report-notification Edge Function via HTTP
+                        // We use the report ID from the data we just created
+                        let url = URL(string: "https://pgezrygzubjieqfzyccy.supabase.co/functions/v1/report-notification")!
+                        var request = URLRequest(url: url)
+                        request.httpMethod = "POST"
+                        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                        request.setValue("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBnZXpyeWd6dWJqaWVxZnp5Y2N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4MzE5NjcsImV4cCI6MjA3NzQwNzk2N30.-AK_lNlPfjdPCyXP2KySnFFZ3D_u5UbczXmcOFD6AA8", forHTTPHeaderField: "Authorization")
+
+                        let payload = ["report_id": reportId.uuidString]
+                        request.httpBody = try JSONEncoder().encode(payload)
+
+                        let (data, response) = try await URLSession.shared.data(for: request)
+                        if let httpResponse = response as? HTTPURLResponse {
+                            print("📧 Report notification response: \(httpResponse.statusCode)")
+                            if httpResponse.statusCode == 200 {
+                                print("✅ Notification sent successfully")
+                            } else {
+                                print("⚠️ Notification failed: \(String(data: data, encoding: .utf8) ?? "unknown error")")
+                            }
+                        }
+                    } catch {
+                        print("⚠️ Failed to send report notification: \(error.localizedDescription)")
+                    }
+                }
 
                 // Show confirmation message
                 await MainActor.run {

@@ -39,6 +39,11 @@ struct Home: Codable, Identifiable, Hashable {
     var statusUpdatedAt: Date? // When the status last changed
     var statusCheckedAt: Date? // Last time we checked Zillow for updates (for tiered checking)
     var customDescription: Bool? // If true, prevents auto-updates from Zillow API
+
+    // Price tracking fields
+    var originalPrice: Decimal? // First imported price when listing was added
+    var priceHistory: [PriceChange]? // Array of price changes over time
+    var lastPriceCheck: Date? // Last time we checked Zillow for price updates
     var openHouseDate: Date?
     var openHouseEndDate: Date?
     var openHousePaid: Bool?
@@ -107,6 +112,9 @@ struct Home: Codable, Identifiable, Hashable {
         case statusUpdatedAt = "status_updated_at"
         case statusCheckedAt = "status_checked_at"
         case customDescription = "custom_description"
+        case originalPrice = "original_price"
+        case priceHistory = "price_history"
+        case lastPriceCheck = "last_price_check"
         case openHouseDate = "open_house_date"
         case openHouseEndDate = "open_house_end_date"
         case openHousePaid = "open_house_paid"
@@ -193,5 +201,22 @@ struct AnyCodable: Codable, Hashable {
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(String(describing: value))
+    }
+}
+
+// Price change tracking for price history
+struct PriceChange: Codable, Hashable {
+    let price: Decimal
+    let previousPrice: Decimal
+    let change: Decimal
+    let changePercent: Decimal
+    let date: Date
+
+    enum CodingKeys: String, CodingKey {
+        case price
+        case previousPrice
+        case change
+        case changePercent
+        case date
     }
 }

@@ -27,6 +27,8 @@ struct AccountSettingsView: View {
     @State private var migrationMessage = ""
     @State private var isAdmin = false
     @State private var showTermsOfService = false
+    @State private var showContactUs = false
+    @State private var showContactSubmissions = false
 
     var body: some View {
         NavigationView {
@@ -159,6 +161,20 @@ struct AccountSettingsView: View {
                         }
                         .disabled(isMigratingTags)
 
+                        Button(action: {
+                            showContactSubmissions = true
+                        }) {
+                            HStack {
+                                Image(systemName: "envelope.badge.fill")
+                                Text("View Contact Submissions")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                            }
+                            .foregroundColor(.purple)
+                        }
+
                         if !migrationMessage.isEmpty {
                             Text(migrationMessage)
                                 .font(.caption)
@@ -167,10 +183,33 @@ struct AccountSettingsView: View {
                     } header: {
                         Text("Admin Tools")
                     } footer: {
-                        Text("Regenerate tags for all properties or add #OpenHouse tag to existing posts with open houses for searchability.")
+                        Text("Regenerate tags for all properties, add #OpenHouse tags, or view all contact form submissions with summaries and analytics.")
                             .font(.caption)
                             .foregroundColor(.gray)
                     }
+                }
+
+                // Support section
+                Section {
+                    Button(action: {
+                        showContactUs = true
+                    }) {
+                        HStack {
+                            Image(systemName: "envelope.fill")
+                            Text("Contact Us")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .foregroundColor(.primary)
+                } header: {
+                    Text("Support")
+                } footer: {
+                    Text("Get in touch with us for advertising, feedback, or general inquiries.")
+                        .font(.caption)
+                        .foregroundColor(.gray)
                 }
 
                 // Legal section
@@ -265,6 +304,12 @@ struct AccountSettingsView: View {
                     // Just dismiss - user already agreed
                     showTermsOfService = false
                 }
+            }
+            .sheet(isPresented: $showContactUs) {
+                ContactUsView()
+            }
+            .sheet(isPresented: $showContactSubmissions) {
+                ContactSubmissionsView()
             }
         }
     }

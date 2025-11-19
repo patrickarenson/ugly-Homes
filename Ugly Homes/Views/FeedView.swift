@@ -18,6 +18,12 @@ struct FeedView: View {
     @State private var unreadNotificationsCount = 0
     @State private var newlyCreatedPostIds: Set<UUID> = [] // Track posts created this session
 
+    // Pagination state
+    @State private var currentOffset = 0
+    @State private var isLoadingMore = false
+    @State private var hasMoreData = true
+    private let pageSize = 20 // Load 20 at a time
+
     var filteredHomes: [Home] {
         if searchText.isEmpty {
             return homes
@@ -195,10 +201,29 @@ struct FeedView: View {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             if !filteredHomes.isEmpty {
-                                ForEach(filteredHomes) { home in
+                                ForEach(Array(filteredHomes.enumerated()), id: \.element.id) { index, home in
                                     HomePostView(home: home, searchText: $searchText)
                                         .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)-\(home.tags?.joined(separator: ",") ?? "")")
                                         .padding(.bottom, 16)
+                                        .onAppear {
+                                            // Prefetch trigger: Load more when user reaches 3rd-to-last item
+                                            if index == filteredHomes.count - 3 && !isLoadingMore && hasMoreData && searchText.isEmpty {
+                                                print("📥 Prefetch triggered at index \(index)/\(filteredHomes.count)")
+                                                loadMoreHomes()
+                                            }
+                                            // Preload images for next 2 properties
+                                            preloadImages(startingAt: index + 1, count: 2)
+                                        }
+                                }
+
+                                // Loading indicator at bottom
+                                if isLoadingMore {
+                                    HStack {
+                                        Spacer()
+                                        ProgressView()
+                                            .padding()
+                                        Spacer()
+                                    }
                                 }
                             }
                         }
@@ -300,8 +325,14 @@ struct FeedView: View {
     }
 
     func loadHomes() {
-        print("🔄 loadHomes() called")
+        print("🔄 loadHomes() called - INITIAL LOAD")
         isLoading = true
+
+        // Reset pagination state for fresh load
+        currentOffset = 0
+        hasMoreData = true
+        homes = []
+        allHomes = []
 
         Task {
             do {
@@ -327,6 +358,7 @@ struct FeedView: View {
                     let zipCode: String?
                     let bedrooms: Int?
                     let bathrooms: Decimal?
+                    let livingAreaSqft: Int?
                     let imageUrls: [String]
                     let likesCount: Int
                     let commentsCount: Int
@@ -338,6 +370,9 @@ struct FeedView: View {
                     let listingStatus: String?
                     let zpid: String?
                     let statusUpdatedAt: Date?
+                    let originalPrice: Decimal?
+                    let priceHistory: [PriceChangeResponse]?
+                    let lastPriceCheck: Date?
                     let openHouseDate: Date?
                     let openHouseEndDate: Date?
                     let openHousePaid: Bool?
@@ -362,6 +397,7 @@ struct FeedView: View {
                         case zipCode = "zip_code"
                         case bedrooms
                         case bathrooms
+                        case livingAreaSqft = "living_area_sqft"
                         case imageUrls = "image_urls"
                         case likesCount = "likes_count"
                         case commentsCount = "comments_count"
@@ -373,6 +409,9 @@ struct FeedView: View {
                         case listingStatus = "listing_status"
                         case zpid
                         case statusUpdatedAt = "status_updated_at"
+                        case originalPrice = "original_price"
+                        case priceHistory = "price_history"
+                        case lastPriceCheck = "last_price_check"
                         case openHouseDate = "open_house_date"
                         case openHouseEndDate = "open_house_end_date"
                         case openHousePaid = "open_house_paid"
@@ -385,13 +424,32 @@ struct FeedView: View {
                     }
                 }
 
+                // Price change response for decoding price history
+                struct PriceChangeResponse: Codable {
+                    let price: Decimal
+                    let previousPrice: Decimal
+                    let change: Decimal
+                    let changePercent: Decimal
+                    let date: Date
+                }
+
                 let response: [TrendingHomeResponse] = try await SupabaseManager.shared.client
                     .rpc("get_trending_homes", params: ["requesting_user_id": userId])
-                    .limit(30)  // Only load 30 homes initially for faster load
+                    .limit(pageSize)  // Load pageSize homes for first batch
+                    .range(from: currentOffset, to: currentOffset + pageSize - 1)
                     .execute()
                     .value
 
-                print("✅ Loaded \(response.count) trending homes (limited for performance)")
+                print("✅ Loaded \(response.count)/\(pageSize) trending homes for initial load")
+
+                // Check if we have more data
+                if response.count < pageSize {
+                    hasMoreData = false
+                    print("📭 No more homes to load (got \(response.count) < \(pageSize))")
+                }
+
+                // Update offset for next load
+                currentOffset = pageSize
 
                 // OPTIMIZATION: Fetch all profiles in a single query instead of one-by-one
                 struct ProfileResponse: Codable {
@@ -481,6 +539,17 @@ struct FeedView: View {
                         statusUpdatedAt: homeResponse.statusUpdatedAt,
                         statusCheckedAt: nil,
                         customDescription: nil,
+                        originalPrice: homeResponse.originalPrice,
+                        priceHistory: homeResponse.priceHistory?.map { priceChangeResponse in
+                            PriceChange(
+                                price: priceChangeResponse.price,
+                                previousPrice: priceChangeResponse.previousPrice,
+                                change: priceChangeResponse.change,
+                                changePercent: priceChangeResponse.changePercent,
+                                date: priceChangeResponse.date
+                            )
+                        },
+                        lastPriceCheck: homeResponse.lastPriceCheck,
                         openHouseDate: homeResponse.openHouseDate,
                         openHouseEndDate: homeResponse.openHouseEndDate,
                         openHousePaid: homeResponse.openHousePaid,
@@ -497,7 +566,7 @@ struct FeedView: View {
                         schoolRating: nil,
                         hoaFee: nil,
                         lotSizeSqft: nil,
-                        livingAreaSqft: nil,
+                        livingAreaSqft: homeResponse.livingAreaSqft,
                         yearBuilt: nil,
                         propertyTypeDetail: nil,
                         parkingSpaces: nil,
@@ -576,6 +645,228 @@ struct FeedView: View {
                 print("❌ Error loading trending homes: \(error)")
                 print("❌ Error details: \(error.localizedDescription)")
                 isLoading = false
+            }
+        }
+    }
+
+    func loadMoreHomes() {
+        guard !isLoadingMore && hasMoreData else {
+            print("⏸️ Skipping loadMore - isLoadingMore: \(isLoadingMore), hasMoreData: \(hasMoreData)")
+            return
+        }
+
+        print("🔄 loadMoreHomes() called - Loading offset \(currentOffset)")
+        isLoadingMore = true
+
+        Task {
+            do {
+                // Get current user ID
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                // Reuse the same struct definitions from loadHomes
+                struct TrendingHomeResponse: Codable {
+                    let id: UUID
+                    let userId: UUID
+                    let title: String
+                    let postType: String?
+                    let listingType: String?
+                    let description: String?
+                    let price: Decimal?
+                    let address: String?
+                    let city: String?
+                    let state: String?
+                    let zipCode: String?
+                    let bedrooms: Int?
+                    let bathrooms: Decimal?
+                    let imageUrls: [String]
+                    let likesCount: Int
+                    let commentsCount: Int
+                    let isActive: Bool
+                    let isArchived: Bool?
+                    let archivedAt: Date?
+                    let soldStatus: String?
+                    let soldDate: Date?
+                    let listingStatus: String?
+                    let zpid: String?
+                    let statusUpdatedAt: Date?
+                    let originalPrice: Decimal?
+                    let priceHistory: [PriceChangeResponse]?
+                    let lastPriceCheck: Date?
+                    let openHouseDate: Date?
+                    let openHouseEndDate: Date?
+                    let openHousePaid: Bool?
+                    let subscriptionId: String?
+                    let expiresAt: Date?
+                    let tags: [String]?
+                    let createdAt: Date
+                    let updatedAt: Date
+                    let trendingScore: Decimal
+
+                    enum CodingKeys: String, CodingKey {
+                        case id, userId = "user_id", title, postType = "post_type"
+                        case listingType = "listing_type", description, price, address
+                        case city, state, zipCode = "zip_code", bedrooms, bathrooms
+                        case imageUrls = "image_urls", likesCount = "likes_count"
+                        case commentsCount = "comments_count", isActive = "is_active"
+                        case isArchived = "is_archived", archivedAt = "archived_at"
+                        case soldStatus = "sold_status", soldDate = "sold_date"
+                        case listingStatus = "listing_status", zpid
+                        case statusUpdatedAt = "status_updated_at"
+                        case originalPrice = "original_price", priceHistory = "price_history"
+                        case lastPriceCheck = "last_price_check"
+                        case openHouseDate = "open_house_date"
+                        case openHouseEndDate = "open_house_end_date"
+                        case openHousePaid = "open_house_paid"
+                        case subscriptionId = "subscription_id", expiresAt = "expires_at"
+                        case tags, createdAt = "created_at", updatedAt = "updated_at"
+                        case trendingScore = "trending_score"
+                    }
+                }
+
+                struct PriceChangeResponse: Codable {
+                    let price: Decimal
+                    let previousPrice: Decimal
+                    let change: Decimal
+                    let changePercent: Decimal
+                    let date: Date
+                }
+
+                // Load next batch
+                let response: [TrendingHomeResponse] = try await SupabaseManager.shared.client
+                    .rpc("get_trending_homes", params: ["requesting_user_id": userId])
+                    .limit(pageSize)
+                    .range(from: currentOffset, to: currentOffset + pageSize - 1)
+                    .execute()
+                    .value
+
+                print("✅ Loaded \(response.count)/\(pageSize) more homes at offset \(currentOffset)")
+
+                // Check if we've reached the end
+                if response.count < pageSize {
+                    await MainActor.run {
+                        hasMoreData = false
+                    }
+                    print("📭 Reached end of feed")
+                }
+
+                // Fetch profiles for new batch
+                struct ProfileResponse: Codable {
+                    let id: UUID
+                    let username: String
+                    let fullName: String?
+                    let avatarUrl: String?
+                    let bio: String?
+                    let isVerified: Bool?
+                    let createdAt: Date
+                    let updatedAt: Date
+
+                    enum CodingKeys: String, CodingKey {
+                        case id, username, fullName = "full_name"
+                        case avatarUrl = "avatar_url", bio, isVerified = "is_verified"
+                        case createdAt = "created_at", updatedAt = "updated_at"
+                    }
+                }
+
+                let uniqueUserIds = Array(Set(response.map { $0.userId.uuidString }))
+                let profilesResponse: [ProfileResponse] = try await SupabaseManager.shared.client
+                    .from("profiles")
+                    .select()
+                    .in("id", values: uniqueUserIds)
+                    .execute()
+                    .value
+
+                var profilesDict: [UUID: Profile] = [:]
+                for p in profilesResponse {
+                    profilesDict[p.id] = Profile(
+                        id: p.id, username: p.username, fullName: p.fullName,
+                        avatarUrl: p.avatarUrl, bio: p.bio, market: nil,
+                        isVerified: p.isVerified, createdAt: p.createdAt,
+                        updatedAt: p.updatedAt
+                    )
+                }
+
+                // Convert to Home objects
+                var newHomes: [Home] = []
+                for homeResponse in response {
+                    var home = Home(
+                        id: homeResponse.id, userId: homeResponse.userId,
+                        title: homeResponse.title, listingType: homeResponse.listingType,
+                        description: homeResponse.description, price: homeResponse.price,
+                        address: homeResponse.address, unit: nil, city: homeResponse.city,
+                        state: homeResponse.state, zipCode: homeResponse.zipCode,
+                        bedrooms: homeResponse.bedrooms, bathrooms: homeResponse.bathrooms,
+                        imageUrls: homeResponse.imageUrls,
+                        likesCount: homeResponse.likesCount,
+                        commentsCount: homeResponse.commentsCount,
+                        viewCount: nil, shareCount: nil, saveCount: nil,
+                        isActive: homeResponse.isActive, isArchived: homeResponse.isArchived,
+                        archivedAt: homeResponse.archivedAt, requiresReview: nil,
+                        moderationReason: nil, soldStatus: homeResponse.soldStatus,
+                        soldDate: homeResponse.soldDate,
+                        listingStatus: homeResponse.listingStatus, zpid: homeResponse.zpid,
+                        statusUpdatedAt: homeResponse.statusUpdatedAt,
+                        statusCheckedAt: nil, customDescription: nil,
+                        originalPrice: homeResponse.originalPrice,
+                        priceHistory: homeResponse.priceHistory?.map { priceChangeResponse in
+                            PriceChange(
+                                price: priceChangeResponse.price,
+                                previousPrice: priceChangeResponse.previousPrice,
+                                change: priceChangeResponse.change,
+                                changePercent: priceChangeResponse.changePercent,
+                                date: priceChangeResponse.date
+                            )
+                        },
+                        lastPriceCheck: homeResponse.lastPriceCheck,
+                        openHouseDate: homeResponse.openHouseDate,
+                        openHouseEndDate: homeResponse.openHouseEndDate,
+                        openHousePaid: homeResponse.openHousePaid,
+                        stripePaymentId: nil, subscriptionId: homeResponse.subscriptionId,
+                        expiresAt: homeResponse.expiresAt, tags: homeResponse.tags,
+                        postType: homeResponse.postType, beforePhotos: nil,
+                        schoolDistrict: nil, elementarySchool: nil, middleSchool: nil,
+                        highSchool: nil, schoolRating: nil, hoaFee: nil, lotSizeSqft: nil,
+                        livingAreaSqft: nil, yearBuilt: nil, propertyTypeDetail: nil,
+                        parkingSpaces: nil, stories: nil, heatingType: nil,
+                        coolingType: nil, appliancesIncluded: nil, additionalDetails: nil,
+                        createdAt: homeResponse.createdAt, updatedAt: homeResponse.updatedAt
+                    )
+                    home.profile = profilesDict[homeResponse.userId]
+                    newHomes.append(home)
+                }
+
+                // Append new homes to existing list
+                await MainActor.run {
+                    homes.append(contentsOf: newHomes)
+                    allHomes.append(contentsOf: newHomes)
+                    currentOffset += pageSize
+                    isLoadingMore = false
+                }
+
+                print("📊 Total homes now: \(homes.count)")
+
+            } catch {
+                print("❌ Error loading more homes: \(error)")
+                await MainActor.run {
+                    isLoadingMore = false
+                    hasMoreData = false  // Stop trying if we hit an error
+                }
+            }
+        }
+    }
+
+    func preloadImages(startingAt index: Int, count: Int) {
+        // Preload images for next few properties to improve scroll performance
+        guard index < homes.count else { return }
+
+        let endIndex = min(index + count, homes.count)
+        for i in index..<endIndex {
+            let home = homes[i]
+            // Preload first image of each property
+            if let firstImageUrl = home.imageUrls.first,
+               let url = URL(string: firstImageUrl) {
+                URLSession.shared.dataTask(with: url) { _, _, _ in
+                    // Just trigger the download, URLCache will handle storage
+                }.resume()
             }
         }
     }
@@ -748,6 +1039,26 @@ struct HomePostView: View {
                                     listingStatus == "off_market" ? Color.red : Color.gray
                                 )
                                 .cornerRadius(4)
+                        }
+
+                        // Price Drop/Increase badge (automatic from price tracking)
+                        if let priceHistory = home.priceHistory, !priceHistory.isEmpty,
+                           let latestChange = priceHistory.last {
+                            let isDecrease = latestChange.change < 0
+                            let changeAmount = abs(Double(truncating: latestChange.change as NSNumber))
+                            let changePercent = abs(Double(truncating: latestChange.changePercent as NSNumber))
+
+                            HStack(spacing: 2) {
+                                Image(systemName: isDecrease ? "arrow.down" : "arrow.up")
+                                    .font(.system(size: 8, weight: .bold))
+                                Text("\(Int(changePercent))%")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(isDecrease ? Color.blue : Color.red)
+                            .cornerRadius(4)
                         }
 
                         // Open House badge (green) - only show if date hasn't passed

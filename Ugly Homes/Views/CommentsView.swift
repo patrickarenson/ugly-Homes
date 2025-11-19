@@ -39,6 +39,7 @@ struct CommentsView: View {
     init(home: Home) {
         self.home = home
         _estimatedPrice = State(initialValue: NSDecimalNumber(decimal: home.price ?? 0).intValue)
+        print("🏠 CommentsView INIT - Square Footage: \(home.livingAreaSqft?.description ?? "NIL")")
     }
 
     var body: some View {
@@ -64,127 +65,100 @@ struct CommentsView: View {
                     Text(address)
                         .font(.subheadline)
                         .foregroundColor(.primary)
+                        .padding(.horizontal)
                 } else if let city = home.city, let state = home.state {
                     Text("\(city), \(state)")
                         .font(.subheadline)
                         .foregroundColor(.primary)
+                        .padding(.horizontal)
                 }
 
-                // Property details - bed/bath (Line 2)
+                // Line 2: Bed/Bath on left, Housers Estimate on right
                 HStack(spacing: 12) {
-                // Bedrooms
-                if let bedrooms = home.bedrooms {
-                    HStack(spacing: 4) {
-                        Image(systemName: "bed.double.fill")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                        Text("\(bedrooms)")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
-                }
-
-                // Bathrooms
-                if let bathrooms = home.bathrooms {
-                    HStack(spacing: 4) {
-                        Image(systemName: "shower.fill")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                        Text(String(format: "%.1f", Double(truncating: bathrooms as NSNumber)))
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
-                }
-
-                Spacer()
-            }
-            .padding(.horizontal)
-            .padding(.top, 2)
-
-            // Line 3: Square footage
-            if let sqft = home.livingAreaSqft {
-                Text("\(sqft) sq ft")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-                    .padding(.horizontal)
-                    .padding(.top, 2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            // Line 4: Listing price
-            if let price = home.price {
-                let priceInt = Int(truncating: price as NSNumber)
-                Text("Listed at \(formatPrice(priceInt))")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                    .padding(.horizontal)
-                    .padding(.top, 2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            // Housers Estimate section
-            HStack(spacing: 12) {
-                Spacer()
-
-                // Housers Estimate on right side
-                if home.price != nil {
-                    VStack(spacing: 2) {
-                        Text("Housers Estimate")
-                            .font(.system(size: 9))
-                            .foregroundColor(.gray)
-
+                    // Bedrooms
+                    if let bedrooms = home.bedrooms {
                         HStack(spacing: 4) {
-                            // Up arrow button
-                            Button(action: {
-                                handleVote(voteType: "up")
-                            }) {
-                                Image(systemName: "arrow.up")
-                                    .font(.title3)
-                                    .foregroundColor(upVoted ? .green : .gray)
-                            }
-
-                            // Estimated price
-                            Text(formatPrice(estimatedPrice))
+                            Image(systemName: "bed.double.fill")
                                 .font(.subheadline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.orange)
+                                .foregroundColor(.gray)
+                            Text("\(bedrooms)")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                        }
+                    }
 
-                            // Down arrow button
-                            Button(action: {
-                                handleVote(voteType: "down")
-                            }) {
-                                Image(systemName: "arrow.down")
-                                    .font(.title3)
-                                    .foregroundColor(downVoted ? .red : .gray)
+                    // Bathrooms
+                    if let bathrooms = home.bathrooms {
+                        HStack(spacing: 4) {
+                            Image(systemName: "shower.fill")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            Text(String(format: "%.1f", Double(truncating: bathrooms as NSNumber)))
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                        }
+                    }
+
+                    Spacer()
+
+                    // Housers Estimate on right side
+                    if home.price != nil {
+                        VStack(spacing: 2) {
+                            Text("Housers Estimate")
+                                .font(.system(size: 9))
+                                .foregroundColor(.gray)
+
+                            HStack(spacing: 4) {
+                                // Up arrow button
+                                Button(action: {
+                                    handleVote(voteType: "up")
+                                }) {
+                                    Image(systemName: "arrow.up")
+                                        .font(.title3)
+                                        .foregroundColor(upVoted ? .green : .gray)
+                                }
+
+                                // Estimated price
+                                Text(formatPrice(estimatedPrice))
+                                    .font(.subheadline)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.orange)
+
+                                // Down arrow button
+                                Button(action: {
+                                    handleVote(voteType: "down")
+                                }) {
+                                    Image(systemName: "arrow.down")
+                                        .font(.title3)
+                                        .foregroundColor(downVoted ? .red : .gray)
+                                }
                             }
                         }
                     }
                 }
-                }
+                .padding(.horizontal)
 
-                // Square footage (Line 3)
+                // Line 3: Square footage
                 if let sqft = home.livingAreaSqft {
-                    HStack(spacing: 4) {
-                        Image(systemName: "square.split.2x2")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                        Text("\(formatNumber(sqft)) sq ft")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
+                    let _ = print("✅ DISPLAYING Square Footage: \(sqft) sq ft")
+                    Text("\(formatNumber(sqft)) sq ft")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .padding(.horizontal)
+                } else {
+                    let _ = print("❌ NO Square Footage to display - home.livingAreaSqft is nil")
                 }
 
-                // Price (Line 4)
+                // Line 4: Listed for price
                 if let price = home.price {
                     let priceInt = Int(truncating: price as NSNumber)
                     Text("Listed for $\(formatPrice(priceInt))")
                         .font(.body)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
+                        .padding(.horizontal)
                 }
             }
-            .padding(.horizontal)
             .padding(.vertical, 8)
             .background(Color(.systemGroupedBackground))
 

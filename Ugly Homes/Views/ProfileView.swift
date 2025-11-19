@@ -270,6 +270,25 @@ struct ProfileView: View {
                                                             .cornerRadius(4)
                                                     }
 
+                                                    // Price Drop/Increase badge (automatic from price tracking)
+                                                    if let priceHistory = home.priceHistory, !priceHistory.isEmpty,
+                                                       let latestChange = priceHistory.last {
+                                                        let isDecrease = latestChange.change < 0
+                                                        let changePercent = abs(Double(truncating: latestChange.changePercent as NSNumber))
+
+                                                        HStack(spacing: 2) {
+                                                            Image(systemName: isDecrease ? "arrow.down" : "arrow.up")
+                                                                .font(.system(size: 7, weight: .bold))
+                                                            Text("\(Int(changePercent))%")
+                                                                .font(.system(size: 9, weight: .bold))
+                                                        }
+                                                        .foregroundColor(.white)
+                                                        .padding(.horizontal, 6)
+                                                        .padding(.vertical, 3)
+                                                        .background(isDecrease ? Color.blue : Color.red)
+                                                        .cornerRadius(4)
+                                                    }
+
                                                     if home.openHousePaid == true, let openHouseDate = home.openHouseDate {
                                                         let isUpcoming = openHouseDate > Date().addingTimeInterval(-86400)
                                                         if isUpcoming {
@@ -363,6 +382,25 @@ struct ProfileView: View {
                                                             listingStatus == "off_market" ? Color.red : Color.gray
                                                         )
                                                         .cornerRadius(4)
+                                                }
+
+                                                // Price Drop/Increase badge (automatic from price tracking)
+                                                if let priceHistory = home.priceHistory, !priceHistory.isEmpty,
+                                                   let latestChange = priceHistory.last {
+                                                    let isDecrease = latestChange.change < 0
+                                                    let changePercent = abs(Double(truncating: latestChange.changePercent as NSNumber))
+
+                                                    HStack(spacing: 2) {
+                                                        Image(systemName: isDecrease ? "arrow.down" : "arrow.up")
+                                                            .font(.system(size: 7, weight: .bold))
+                                                        Text("\(Int(changePercent))%")
+                                                            .font(.system(size: 9, weight: .bold))
+                                                    }
+                                                    .foregroundColor(.white)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 3)
+                                                    .background(isDecrease ? Color.blue : Color.red)
+                                                    .cornerRadius(4)
                                                 }
 
                                                 // Open House badge

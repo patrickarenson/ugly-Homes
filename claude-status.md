@@ -1,7 +1,75 @@
 # Claude Code - Project Status
-**Last Updated:** November 13, 2025 @ 10:00 PM
+**Last Updated:** November 19, 2025 @ 3:10 AM
 
 **⚠️ TESTING NOTE**: Always test on physical iPhone - simulator causes computer to crash
+
+**📝 IMPORTANT FOR CLAUDE**: Update this file frequently throughout each session in case terminal resets. Document all changes, fixes, and status as they happen.
+
+## Session 15 Summary - Tagging, Square Footage & Marketing Automation (November 19, 2025)
+
+**Version:** 2.0.2 (Build 4)
+
+### Issues Resolved:
+
+1. ✅ **TagGenerator Compilation Errors** - Fixed 4 build errors
+   - Added missing `hasWaterViews` variable definition (lines 147-153)
+   - Moved `isUnderConstruction` declaration before first use (lines 458-466)
+   - Fixed operator precedence in `isPrimaryResidence` (lines 278-279)
+   - Added missing closing parenthesis in `hasNewMajorSystems` (line 601)
+
+2. ✅ **Square Footage Display** - Fixed end-to-end data flow
+   - **Root Cause:** `TrendingHomeResponse` struct missing `livingAreaSqft` field
+   - Added `livingAreaSqft: Int?` to struct (`FeedView.swift:361`)
+   - Added CodingKey mapping for `living_area_sqft` (line 400)
+   - Fixed Home object creation to use `homeResponse.livingAreaSqft` instead of `nil` (line 569)
+   - Updated Supabase `get_trending_homes()` function to return `living_area_sqft` column
+   - All listings now display square footage correctly in CommentsView
+
+3. ✅ **Marketing Dashboard & Email Automation** - Implemented
+   - Created email contact import system (`import-email-contacts.js`)
+   - Built automated email blast scheduler (3-email campaign)
+   - **Email #1:** Nov 19, 10:30 AM
+   - **Email #2:** Nov 21, 10:30 AM - "Why Orlando users are loving Houser"
+   - **Email #3:** Nov 24, 10:30 AM - "Orlando users are already posting — don't miss this"
+   - ⚠️ **Issue:** Contact import failing with "Invalid API key" errors (798 contacts affected)
+
+4. ✅ **Twilio Integration** - Implemented for SMS marketing
+
+### Tag Logic Improvements:
+
+**#NewConstruction** - Renamed from #NewBuild
+**#TurnKey** - Only for renovated homes, NOT new construction
+**#Vacation** - Excludes primary residences (near schools/offices)
+**#ForeverHome** - Excludes distressed sales
+**#ValueAdd** - Updated to include land value plays even for luxury properties
+**Projects** - Removed from map view
+**#LargeProperty** - Removed
+
+### Files Modified:
+- `Utils/TagGenerator.swift` - Fixed compilation errors, updated tag logic
+- `Views/FeedView.swift` - Added `livingAreaSqft` to TrendingHomeResponse
+- `Views/CommentsView.swift` - Added debug logging for square footage
+- `Views/CreatePostView.swift` - Improved square footage fallback logic
+- **Supabase:** Updated `get_trending_homes()` function (SQL)
+- **Node.js Scripts:**
+  - `import-email-contacts.js` - Email contact importer
+  - `schedule-email-blast.js` - Email #1 scheduler
+  - `schedule-email-2.js` - Email #2 scheduler
+  - `schedule-email-3.js` - Email #3 scheduler
+
+### Pending Issues:
+
+1. ❌ **Email Contact Import API Key Error**
+   - All 798 contacts failing with "Invalid API key"
+   - Need to verify Supabase service role key or email service API configuration
+   - Script completed but no contacts were inserted
+
+### Status:
+- ✅ App build successful - All tagging and square footage fixes working
+- ✅ Email automation scripts created and scheduled
+- ⚠️ Email contact import needs API key fix
+
+---
 
 ## Session 14 Summary - Build Fixes & UI Improvements (November 13, 2025)
 

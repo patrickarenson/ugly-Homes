@@ -345,12 +345,15 @@ struct LocationFeedView: View {
                     .execute()
                     .value
 
-                // Filter out sold and leased properties from map view
+                // Filter out sold/leased properties and projects from map view
+                // Projects are design inspiration, not real estate listings
                 let activeListings = response.filter { home in
-                    home.soldStatus == nil || (home.soldStatus != "sold" && home.soldStatus != "leased")
+                    let isNotSoldOrLeased = home.soldStatus == nil || (home.soldStatus != "sold" && home.soldStatus != "leased")
+                    let isNotProject = home.postType != "project"
+                    return isNotSoldOrLeased && isNotProject
                 }
 
-                print("✅ Loaded \(response.count) homes, showing \(activeListings.count) active listings (filtered out sold/leased)")
+                print("✅ Loaded \(response.count) homes, showing \(activeListings.count) active listings (filtered out sold/leased/projects)")
                 homes = activeListings
                 allHomes = activeListings
                 isLoading = false

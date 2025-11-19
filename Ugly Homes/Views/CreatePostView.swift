@@ -41,6 +41,7 @@ struct CreatePostView: View {
     @State private var price = ""
     @State private var bedrooms = ""
     @State private var bathrooms = ""
+    @State private var squareFootage = ""
     @State private var address = ""
     @State private var unit = ""
     @State private var city = ""
@@ -104,6 +105,7 @@ struct CreatePostView: View {
             _price = State(initialValue: home.price?.description ?? "")
             _bedrooms = State(initialValue: home.bedrooms != nil ? String(home.bedrooms!) : "")
             _bathrooms = State(initialValue: home.bathrooms != nil ? String(NSDecimalNumber(decimal: home.bathrooms!).doubleValue) : "")
+            _squareFootage = State(initialValue: home.livingAreaSqft != nil ? String(home.livingAreaSqft!) : "")
             _address = State(initialValue: home.address ?? "")
             _unit = State(initialValue: home.unit ?? "")
             _city = State(initialValue: home.city ?? "")
@@ -439,7 +441,7 @@ struct CreatePostView: View {
 
                             // Placeholder text
                             if description.isEmpty {
-                                Text(postType == .project ? "Tell us what you're working on — what inspired it, what's next?" : "Highlight key features, upgrades, and neighborhood perks.")
+                                Text(postType == .project ? "Tell us what you're working on — mention your design style (modern farmhouse, coastal, industrial, etc.) to inspire others!" : "Highlight key features, upgrades, and neighborhood perks.")
                                     .foregroundColor(.gray.opacity(0.6))
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 12)
@@ -481,6 +483,17 @@ struct CreatePostView: View {
                                     .background(Color(.systemGray6))
                                     .cornerRadius(8)
                             }
+                        }
+
+                        // Square Footage
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Square Footage")
+                                .font(.system(size: 15, weight: .medium))
+                            TextField("0", text: $squareFootage)
+                                .keyboardType(.numberPad)
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
                         }
                     }
 
@@ -953,6 +966,11 @@ struct CreatePostView: View {
                     fieldsPopulated += 1
                     print("🏠 Listing type: \(type)")
                 }
+                if let sqft = scraped.livingAreaSqft {
+                    self.squareFootage = String(sqft)
+                    fieldsPopulated += 1
+                    print("📐 Square footage: \(sqft)")
+                }
 
                 // Store comprehensive property data
                 self.comprehensiveData = ComprehensivePropertyData(
@@ -1035,6 +1053,7 @@ struct CreatePostView: View {
         print("   - Price: \(price.isEmpty ? "EMPTY" : price)")
         print("   - Bedrooms: \(bedrooms.isEmpty ? "EMPTY" : bedrooms)")
         print("   - Bathrooms: \(bathrooms.isEmpty ? "EMPTY" : bathrooms)")
+        print("   - Square Footage: \(squareFootage.isEmpty ? "EMPTY" : squareFootage)")
         print("   - Address: \(address.isEmpty ? "EMPTY" : address)")
 
         errorMessage = ""
@@ -1258,6 +1277,20 @@ struct CreatePostView: View {
                     let additional_details: [String: AnyCodable]?
                 }
 
+                // Determine living area square footage (prefer manual entry, fallback to API data)
+                let livingAreaValue: Int? = {
+                    if !squareFootage.isEmpty, let manualSqft = Int(squareFootage) {
+                        print("   ℹ️ Using manual square footage: \(manualSqft)")
+                        return manualSqft
+                    } else if let apiSqft = comprehensiveData?.livingAreaSqft {
+                        print("   ℹ️ Using API square footage: \(apiSqft)")
+                        return apiSqft
+                    } else {
+                        print("   ℹ️ No square footage available")
+                        return nil
+                    }
+                }()
+
                 let newHome = NewHome(
                     user_id: userId.uuidString,
                     title: generatedTitle,
@@ -1292,7 +1325,7 @@ struct CreatePostView: View {
                     school_rating: comprehensiveData?.schoolRating,
                     hoa_fee: comprehensiveData?.hoaFee,
                     lot_size_sqft: comprehensiveData?.lotSizeSqft,
-                    living_area_sqft: comprehensiveData?.livingAreaSqft,
+                    living_area_sqft: livingAreaValue,
                     year_built: comprehensiveData?.yearBuilt,
                     property_type_detail: comprehensiveData?.propertyTypeDetail,
                     parking_spaces: comprehensiveData?.parkingSpaces,
@@ -1368,6 +1401,15 @@ struct CreatePostView: View {
     func updatePost() {
         guard let homeToEdit = editingHome else { return }
 
+        print("🚀 updatePost() called")
+        print("   - Images: \(imageData.count) local, \(imageUrls.count) URLs")
+        print("   - Description: \(description.isEmpty ? "EMPTY" : "✓")")
+        print("   - Price: \(price.isEmpty ? "EMPTY" : price)")
+        print("   - Bedrooms: \(bedrooms.isEmpty ? "EMPTY" : bedrooms)")
+        print("   - Bathrooms: \(bathrooms.isEmpty ? "EMPTY" : bathrooms)")
+        print("   - Square Footage: \(squareFootage.isEmpty ? "EMPTY" : squareFootage)")
+        print("   - Address: \(address.isEmpty ? "EMPTY" : address)")
+
         errorMessage = ""
         isUploading = true
 
@@ -1424,6 +1466,23 @@ struct CreatePostView: View {
                     generatedTitle = listingType.rawValue
                 }
 
+                // Determine living area square footage (prefer manual entry, fallback to API data, fallback to existing)
+                let livingAreaValue: Int? = {
+                    if !squareFootage.isEmpty, let manualSqft = Int(squareFootage) {
+                        print("   ℹ️ Using manual square footage: \(manualSqft)")
+                        return manualSqft
+                    } else if let apiSqft = comprehensiveData?.livingAreaSqft {
+                        print("   ℹ️ Using API square footage: \(apiSqft)")
+                        return apiSqft
+                    } else if let existingSqft = homeToEdit.livingAreaSqft {
+                        print("   ℹ️ Keeping existing square footage: \(existingSqft)")
+                        return existingSqft
+                    } else {
+                        print("   ℹ️ No square footage available")
+                        return nil
+                    }
+                }()
+
                 // Update home post
                 struct UpdateHome: Encodable {
                     let title: String
@@ -1433,6 +1492,7 @@ struct CreatePostView: View {
                     let price: String?
                     let bedrooms: Int?
                     let bathrooms: String?
+                    let living_area_sqft: Int?
                     let address: String?
                     let unit: String?
                     let city: String?
@@ -1451,6 +1511,7 @@ struct CreatePostView: View {
                     price: price.isEmpty ? nil : price,
                     bedrooms: bedrooms.isEmpty ? nil : Int(bedrooms),
                     bathrooms: bathrooms.isEmpty ? nil : bathrooms,
+                    living_area_sqft: livingAreaValue,
                     address: address.isEmpty ? nil : address,
                     unit: unit.isEmpty ? nil : unit,
                     city: city.isEmpty ? nil : city,

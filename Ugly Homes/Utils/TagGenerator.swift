@@ -31,7 +31,13 @@ struct TagGenerator {
         }
 
         // 2. Listing Type tag - #ForLease for rentals, price tags for sales
-        let isRental = listingType?.lowercased() == "rental" || listingType?.lowercased() == "lease"
+        // Check listingType parameter OR look for rental keywords in title/description as fallback
+        let isRental = listingType?.lowercased() == "rental" ||
+                       listingType?.lowercased() == "lease" ||
+                       title.lowercased().contains("for lease") ||
+                       title.lowercased().contains("for rent") ||
+                       (description?.lowercased().contains("for lease") ?? false) ||
+                       (description?.lowercased().contains("lease terms") ?? false)
 
         if isRental {
             // For rentals/leases, use #ForLease instead of price
@@ -62,20 +68,42 @@ struct TagGenerator {
 
         let text = "\(title) \(description ?? "")".lowercased()
 
+        // Detect distressed sales (short sale, foreclosure, REO) - used across multiple tags
+        let isDistressedSale = text.contains("short sale") ||
+                              text.contains("foreclosure") ||
+                              text.contains("bank owned") ||
+                              text.contains("reo") ||
+                              text.contains("pre-foreclosure")
+
         // 3. Waterfront (CRITICAL - major selling feature, comes before buyer personas)
-        // IMPORTANT: Exclude properties with only "views" - views are NOT waterfront
-        let hasWaterViews = text.contains("water views") ||
-                           text.contains("lake views") ||
-                           text.contains("lakefront views") ||
-                           text.contains("ocean views") ||
-                           text.contains("oceanfront views") ||
-                           text.contains("river views") ||
-                           text.contains("bay views") ||
-                           text.contains("views of the water") ||
-                           text.contains("views of the lake") ||
-                           text.contains("views of the ocean") ||
-                           text.contains("views across") ||
-                           text.contains("overlooking")
+        // Tag properties with actual water access (dock, frontage, etc.)
+        // Exclude properties that ONLY mention views without any water access features
+        let hasWaterViewsOnly = (text.contains("water views") ||
+                                 text.contains("lake views") ||
+                                 text.contains("ocean views") ||
+                                 text.contains("river views") ||
+                                 text.contains("bay views") ||
+                                 text.contains("views of the water") ||
+                                 text.contains("views of the lake") ||
+                                 text.contains("views of the ocean") ||
+                                 text.contains("views across") ||
+                                 text.contains("overlooking")) &&
+                                !(text.contains("waterfront") ||
+                                 text.contains("water front") ||
+                                 text.contains("lakefront") ||
+                                 text.contains("lake front") ||
+                                 text.contains("oceanfront") ||
+                                 text.contains("ocean front") ||
+                                 text.contains("riverfront") ||
+                                 text.contains("river front") ||
+                                 text.contains("beachfront") ||
+                                 text.contains("beach front") ||
+                                 text.contains("bayfront") ||
+                                 text.contains("bay front") ||
+                                 text.contains("dock") ||
+                                 text.contains("slip") ||
+                                 text.contains("boat access") ||
+                                 text.contains("water access"))
 
         let hasActualWaterfront = text.contains("waterfront") ||
            text.contains("water front") ||
@@ -110,10 +138,19 @@ struct TagGenerator {
            text.contains("direct lake access") ||
            text.contains("water access")
 
-        // Only tag as waterfront if it has actual water access AND not just views
-        if hasActualWaterfront && !hasWaterViews {
+        // Tag as waterfront if it has actual water access (even if it also mentions views)
+        // Don't tag if it ONLY has views without water access
+        if hasActualWaterfront && !hasWaterViewsOnly {
             tags.append("#Waterfront")
         }
+
+        // Detect water views (for vacation tag)
+        let hasWaterViews = text.contains("water views") ||
+           text.contains("lake views") ||
+           text.contains("ocean views") ||
+           text.contains("river views") ||
+           text.contains("bay views") ||
+           text.contains("views of the water")
 
         // 4. Buyer Persona Tags (come after waterfront)
 
@@ -232,13 +269,23 @@ struct TagGenerator {
            text.contains("resort-style amenities") ||
            text.contains("resort style amenities")
 
-        if hasExplicitVacationIndicators ||
-           (isVacationPriceRange && hasLocationVacationAppeal) {
+        // Exclude primary residences - properties near schools, with family features, offices
+        let isPrimaryResidence = text.contains("elementary") ||
+           text.contains("school district") ||
+           text.contains("top-rated school") ||
+           text.contains("top rated school") ||
+           text.contains("zoned for") ||
+           ((text.contains("office") || text.contains("home office")) &&
+            (text.contains("family") || text.contains("bedroom")))
+
+        if !isPrimaryResidence && (hasExplicitVacationIndicators ||
+           (isVacationPriceRange && hasLocationVacationAppeal)) {
             tags.append("#Vacation")
         }
 
         // Forever Home Buyers (upgraded family homes with space for growing families)
         // Exclude luxury price range ($2M+) - those are estates, not family homes
+        // Exclude distressed sales - those are investor opportunities, not family homes
         let isForeverHomePriceRange: Bool = {
             if let price = price {
                 let priceInt = Int(truncating: price as NSNumber)
@@ -247,7 +294,7 @@ struct TagGenerator {
             return true // If no price, allow ForeverHome
         }()
 
-        if isForeverHomePriceRange && (
+        if !isDistressedSale && isForeverHomePriceRange && (
            text.contains("spacious") ||
            text.contains("family-friendly") ||
            text.contains("family friendly") ||
@@ -267,10 +314,10 @@ struct TagGenerator {
             tags.append("#ForeverHome")
         }
 
-        // Lifestyle Buyers (active/outdoor lifestyle)
+        // Lifestyle Buyers (active/outdoor lifestyle + walkable urban neighborhoods)
         // IMPORTANT: Only tag properties where active lifestyle is the PRIMARY appeal
         // Exclude luxury estates ($10M+ or with luxury estate features) - they're already tagged as luxury
-        // Generic "outdoor spaces" are NOT lifestyle - need actual trails, fitness, sports
+        // Include walkable neighborhoods with restaurants/bars/coffee
         let isLifestylePriceRange: Bool = {
             if let price = price {
                 let priceInt = Int(truncating: price as NSNumber)
@@ -279,6 +326,11 @@ struct TagGenerator {
             // If no price, check for luxury estate features
             return !hasLuxuryEstateFeatures
         }()
+
+        let hasWalkableLifestyle =
+           (text.contains("walking distance") || text.contains("walkable") || text.contains("walk to")) &&
+           (text.contains("restaurant") || text.contains("bar") || text.contains("coffee") ||
+            text.contains("shops") || text.contains("downtown") || text.contains("neighborhood"))
 
         if isLifestylePriceRange && (
            text.contains("trails") ||
@@ -307,7 +359,8 @@ struct TagGenerator {
            text.contains("yoga studio") ||
            text.contains("basketball court") ||
            text.contains("pickleball") ||
-           text.contains("sports court")) {
+           text.contains("sports court") ||
+           hasWalkableLifestyle) {
             tags.append("#Lifestyle")
         }
 
@@ -335,6 +388,9 @@ struct TagGenerator {
            text.contains("close to schools") ||
            text.contains("good school") ||
            text.contains("school district") ||
+           text.contains("zoned for") ||
+           text.contains("coveted") && text.contains("school") ||
+           text.contains("educational excellence") ||
            text.contains("great location") ||
            text.contains("neighborhood") ||
            text.contains("open floor plan") ||
@@ -368,6 +424,7 @@ struct TagGenerator {
         // Luxury Properties (buyer persona - consolidate all variations)
         // Also detect by price: $10M+ is automatically luxury
         // INCLUDES: luxury brands, high-end materials, designer names
+        // IMPORTANT: Exclude properties under construction (luxury is future state, not current)
         let isLuxuryPrice: Bool = {
             if let price = price {
                 return Int(truncating: price as NSNumber) >= 10_000_000
@@ -398,7 +455,17 @@ struct TagGenerator {
                              text.contains("kelly wearstler") ||
                              text.contains("peter marino")
 
-        if isLuxuryPrice ||
+        // Detect properties under construction/renovation (used by multiple tags)
+        let isUnderConstruction =
+           text.contains("under renovation") ||
+           text.contains("under construction") ||
+           text.contains("completion in") ||
+           text.contains("expected completion") ||
+           text.contains("anticipated completion") ||
+           text.contains("renovations underway") ||
+           text.contains("currently being") && (text.contains("renovated") || text.contains("updated"))
+
+        if !isUnderConstruction && (isLuxuryPrice ||
            hasLuxuryBrands ||
            text.contains("custom-built") ||
            text.contains("custom built") ||
@@ -452,7 +519,7 @@ struct TagGenerator {
            text.contains("private terrace") ||
            text.contains("doorman") ||
            text.contains("library") ||
-           text.contains("penthouse") {
+           text.contains("penthouse")) {
             tags.append("#Luxury")
         }
 
@@ -489,13 +556,20 @@ struct TagGenerator {
            text.contains("pre-construction") ||
            text.contains("never lived in") ||
            text.contains("never occupied") ) {
-            tags.append("#NewBuild")
+            tags.append("#NewConstruction")
         }
 
-        // TurnKey (fully renovated homes OR new builds - move-in ready)
-        // For homes that need zero work, either because they're new or completely renovated
+        // TurnKey (fully renovated/gut renovated homes - move-in ready)
+        // For homes that have been recently renovated or gut renovated (NOT new construction)
         // Includes historic conversions and transformations
-        if text.contains("turnkey") ||
+        // Also includes properties with all new major systems (roof, AC, water heater)
+        // IMPORTANT: Exclude properties currently under renovation/construction
+        let hasNewMajorSystems =
+           (text.contains("new roof") || text.contains("brand-new roof") || text.contains("brand new roof")) &&
+           (text.contains("new ac") || text.contains("new air") || text.contains("new hvac") ||
+            text.contains("new water heater"))
+
+        if !isUnderConstruction && (text.contains("turnkey") ||
            text.contains("turn-key") ||
            text.contains("turn key") ||
            text.contains("fully renovated") ||
@@ -512,6 +586,8 @@ struct TagGenerator {
            text.contains("move in ready") ||
            text.contains("nothing to do") ||
            text.contains("ready to move in") ||
+           text.contains("worry-free") ||
+           text.contains("worry free") ||
            text.contains("completely updated") ||
            text.contains("fully updated") ||
            text.contains("like new condition") ||
@@ -521,7 +597,8 @@ struct TagGenerator {
            text.contains("reborn") ||
            text.contains("conversion") && (text.contains("residential") || text.contains("condos") || text.contains("apartments")) ||
            text.contains("adaptive reuse") ||
-           text.contains("historic conversion") {
+           text.contains("historic conversion") ||
+           hasNewMajorSystems) {
             tags.append("#TurnKey")
         }
 
@@ -604,8 +681,23 @@ struct TagGenerator {
 
         // 5. Feature Tags (supplementary features)
 
-        // Pool (try to detect private pools, not community pools)
-        if text.contains("pool") && !text.contains("community pool") {
+        // Pool (try to detect actual existing pools, not potential/possible pools)
+        // Exclude: pool possible, pool potential, room for pool, add a pool, build a pool
+        let hasActualPool = text.contains("pool") &&
+                           !text.contains("community pool") &&
+                           !text.contains("pool possible") &&
+                           !text.contains("pool potential") &&
+                           !text.contains("room for pool") &&
+                           !text.contains("room for a pool") &&
+                           !text.contains("add a pool") &&
+                           !text.contains("add pool") &&
+                           !text.contains("build a pool") &&
+                           !text.contains("build pool") &&
+                           !text.contains("pool ready") &&
+                           !text.contains("space for pool") &&
+                           !text.contains("space for a pool")
+
+        if hasActualPool {
             tags.append("#Pool")
         }
 
@@ -650,22 +742,44 @@ struct TagGenerator {
 
         // Value Add (properties with opportunity to increase value)
         // Includes: dated luxury, development opportunities, customization potential
+        // IMPORTANT: Exclude generic marketing phrases like "rare opportunity to own"
+        // IMPORTANT: Exclude properties with top-tier luxury finishes (already complete)
+
+        // Detect ultra-high-end finishes (indicates turnkey, not value-add)
+        let hasUltraLuxuryFinishes = text.contains("calacatta marble") ||
+                                    text.contains("christopher peacock") ||
+                                    text.contains("sub-zero") && text.contains("wolf") ||
+                                    text.contains("gaggenau") ||
+                                    text.contains("miele") && (text.contains("wolf") || text.contains("sub-zero")) ||
+                                    text.contains("steam shower") && text.contains("spa") ||
+                                    text.contains("smart home") && (text.contains("ipad") || text.contains("automation")) ||
+                                    text.contains("trophy") && (text.contains("penthouse") || text.contains("estate"))
 
         // Detect dated technology/systems (older luxury indicators)
         let hasDatedLuxury = text.contains("viking") && text.contains("appliances") ||
                             text.contains("crestron") && !text.contains("new") && !text.contains("updated") ||
                             text.contains("timeless elegance") && !text.contains("renovated") && !text.contains("updated")
 
-        // Detect emphasis on bones/architecture over finishes
+        // Detect emphasis on bones/architecture over finishes (needs actual improvement language)
         let emphasizesBones = (text.contains("designed by") || text.contains("architect")) &&
-                             (text.contains("opportunity") || text.contains("potential")) ||
+                             (text.contains("opportunity to") || text.contains("potential to")) &&
+                             (text.contains("customize") || text.contains("update") || text.contains("renovate")) ||
                              text.contains("great bones") ||
                              text.contains("good bones") ||
                              text.contains("solid bones")
 
-        if text.contains("value-add") ||
+        // Detect land value plays (luxury teardowns/rebuilds)
+        let isLandValuePlay = (text.contains("reimagined") || text.contains("re-imagined")) &&
+                             (text.contains("legacy") || text.contains("estate") || text.contains("compound")) ||
+                             text.contains("enjoyed as is or") ||
+                             text.contains("as is or reimagined") ||
+                             (text.contains("tear down") || text.contains("build new")) && text.contains("estate")
+
+        if !hasUltraLuxuryFinishes && (text.contains("value-add") ||
            text.contains("value add") ||
            text.contains("opportunity to customize") ||
+           text.contains("opportunity to update") ||
+           text.contains("opportunity to renovate") ||
            text.contains("customize to your taste") ||
            text.contains("add value") ||
            text.contains("bring your vision") ||
@@ -673,10 +787,11 @@ struct TagGenerator {
            text.contains("personalize") ||
            text.contains("blank canvas") && (text.contains("luxury") || text.contains("estate")) ||
            text.contains("development opportunity") ||
-           text.contains("redevelopment") ||
+           text.contains("redevelopment opportunity") ||
            text.contains("update to your standards") ||
            hasDatedLuxury ||
-           emphasizesBones {
+           emphasizesBones ||
+           isLandValuePlay) {
             tags.append("#ValueAdd")
         }
 
@@ -693,7 +808,8 @@ struct TagGenerator {
            text.contains("priced to sell") ||
            text.contains("motivated seller") ||
            text.contains("must sell") ||
-           text.contains("reduced") {
+           text.contains("reduced") ||
+           isDistressedSale {
             tags.append("#BelowMarket")
         }
 
@@ -703,6 +819,11 @@ struct TagGenerator {
            text.contains("motivated seller") ||
            text.contains("must sell") ||
            text.contains("owner financing") ||
+           text.contains("seller financing") ||
+           text.contains("seller credit") ||
+           text.contains("seller concession") ||
+           text.contains("closing cost credit") ||
+           text.contains("closing cost assistance") ||
            text.contains("flexible terms") ||
            text.contains("price reduction") ||
            text.contains("price reduced") ||
@@ -710,7 +831,8 @@ struct TagGenerator {
            text.contains("just reduced") ||
            text.contains("make an offer") ||
            text.contains("open to offers") ||
-           text.contains("accepting offers") {
+           text.contains("accepting offers") ||
+           isDistressedSale {
             tags.append("#MotivatedSeller")
         }
 
@@ -722,19 +844,171 @@ struct TagGenerator {
             tags.append("#Potential")
         }
 
-        // Renovation/Remodel
+        // Transformation & Renovation tags
+        if text.contains("before and after") ||
+           text.contains("before & after") ||
+           text.contains("before/after") {
+            tags.append("#BeforeAndAfter")
+        }
+
+        if text.contains("transformation") ||
+           text.contains("transformed") {
+            tags.append("#Transformation")
+        }
+
+        if text.contains("makeover") {
+            tags.append("#Makeover")
+        }
+
+        // Room-specific renovation tags
+        if text.contains("kitchen reno") ||
+           text.contains("kitchen remodel") ||
+           text.contains("kitchen renovation") ||
+           text.contains("kitchen makeover") ||
+           text.contains("kitchen update") ||
+           text.contains("new kitchen") {
+            tags.append("#KitchenReno")
+        }
+
+        if text.contains("bathroom reno") ||
+           text.contains("bathroom remodel") ||
+           text.contains("bathroom renovation") ||
+           text.contains("bathroom makeover") ||
+           text.contains("bathroom update") ||
+           text.contains("new bathroom") {
+            tags.append("#BathroomReno")
+        }
+
+        if text.contains("basement reno") ||
+           text.contains("basement remodel") ||
+           text.contains("basement renovation") ||
+           text.contains("basement makeover") ||
+           text.contains("basement conversion") ||
+           text.contains("finished basement") {
+            tags.append("#BasementReno")
+        }
+
+        if text.contains("exterior reno") ||
+           text.contains("exterior remodel") ||
+           text.contains("exterior renovation") ||
+           text.contains("exterior makeover") ||
+           text.contains("exterior update") ||
+           text.contains("new siding") ||
+           text.contains("new roof") ||
+           text.contains("painted exterior") {
+            tags.append("#ExteriorReno")
+        }
+
+        if text.contains("curb appeal") ||
+           text.contains("front yard") ||
+           text.contains("landscaping") ||
+           text.contains("landscape design") {
+            tags.append("#CurbAppeal")
+        }
+
+        if text.contains("backyard") ||
+           text.contains("back yard") ||
+           text.contains("outdoor space") ||
+           text.contains("outdoor kitchen") ||
+           text.contains("outdoor bar") ||
+           text.contains("outdoor entertaining") ||
+           text.contains("entertainer's paradise") ||
+           text.contains("entertainers paradise") ||
+           text.contains("patio") ||
+           text.contains("deck") {
+            tags.append("#BackyardMakeover")
+        }
+
+              // Style tags
+        if text.contains("modern farmhouse") ||
+           text.contains("farmhouse style") {
+            tags.append("#ModernFarmhouse")
+        }
+
+        if text.contains("contemporary") ||
+           text.contains("sleek") ||
+           text.contains("modern design") {
+            tags.append("#Contemporary")
+        }
+
+        if text.contains("coastal") ||
+           text.contains("beach house") ||
+           text.contains("nautical") ||
+           text.contains("key west") ||
+           text.contains("tropical") && (text.contains("style") || text.contains("living") || text.contains("flair") || text.contains("charm")) {
+            tags.append("#Coastal")
+        }
+
+        if text.contains("industrial") ||
+           text.contains("exposed brick") ||
+           text.contains("loft style") {
+            tags.append("#Industrial")
+        }
+
+        if text.contains("mid-century") ||
+           text.contains("mid century") ||
+           text.contains("mcm") {
+            tags.append("#MidCentury")
+        }
+
+        if text.contains("minimalist") ||
+           text.contains("clean lines") ||
+           text.contains("scandinavian") {
+            tags.append("#Minimalist")
+        }
+
+        // Budget/Effort tags
+        if text.contains("budget") ||
+           text.contains("affordable") ||
+           text.contains("low cost") ||
+           text.contains("budget-friendly") {
+            tags.append("#BudgetReno")
+        }
+
+        if text.contains("diy") ||
+           text.contains("do it yourself") ||
+           text.contains("did it myself") {
+            tags.append("#DIY")
+        }
+
+        if text.contains("weekend project") ||
+           text.contains("quick project") ||
+           text.contains("one weekend") {
+            tags.append("#WeekendProject")
+        }
+
+        if text.contains("luxury reno") ||
+           text.contains("high-end") && text.contains("reno") ||
+           text.contains("high end") && text.contains("reno") {
+            tags.append("#LuxuryReno")
+        }
+
+        // Inspiration tags
+        if text.contains("design inspiration") ||
+           text.contains("inspired by") {
+            tags.append("#DesignInspiration")
+        }
+
+        if text.contains("home goals") ||
+           text.contains("dream home") {
+            tags.append("#HomeGoals")
+        }
+
+        if text.contains("reveal") ||
+           text.contains("room reveal") {
+            tags.append("#RoomReveal")
+        }
+
+        // Generic renovation tag (catch-all)
         if text.contains("renovat") ||
            text.contains("remodel") ||
-           text.contains("updat") ||
-           text.contains("modern") {
+           text.contains("updat") {
             tags.append("#Renovation")
         }
 
         // 6. Size tags (based on bedrooms)
         if let bedrooms = bedrooms {
-            if bedrooms >= 4 {
-                tags.append("#LargeProperty")
-            } else if bedrooms <= 1 {
+            if bedrooms <= 1 {
                 tags.append("#Studio")
             }
         }

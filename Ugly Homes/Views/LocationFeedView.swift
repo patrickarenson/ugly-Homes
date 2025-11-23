@@ -858,6 +858,8 @@ struct PropertyMapView: View {
     }
 
     func geocodeHome(_ home: Home, priority: Bool) {
+        print("🔍 geocodeHome called for: \(home.city ?? "?"), \(home.state ?? "?") - Address: \(home.address ?? "?")")
+
         // For priority (highlighted) homes, use city/state fallback IMMEDIATELY for fast display
         // Then try full geocoding in background for accuracy
         if priority, let fallbackCoordinate = getCoordinate(for: home) {
@@ -905,7 +907,13 @@ struct PropertyMapView: View {
         geocoder.geocodeAddressString(fullAddress) { [home, self] placemarks, error in
             if let error = error {
                 print("⚠️ Geocoding failed for '\(fullAddress)': \(error.localizedDescription)")
-                // Fallback already used above if priority, so just log the error
+                // Fallback to city/state database for non-priority homes
+                if !priority, let fallbackCoordinate = self.getCoordinate(for: home) {
+                    print("📍 Using city/state fallback: \(home.city ?? "?"), \(home.state ?? "?")")
+                    DispatchQueue.main.async {
+                        self.geocodedCoordinates[home.id] = fallbackCoordinate
+                    }
+                }
                 return
             }
 
@@ -993,7 +1001,10 @@ struct PropertyMapView: View {
         // Try exact match first
         let cityKey = "\(cleanCity),\(cleanState)"
         if let coordinate = USCityCoordinates.coordinates[cityKey] {
+            print("✅ Found coordinate for '\(city), \(state)' using key '\(cityKey)'")
             return coordinate
+        } else {
+            print("❌ No coordinate found for '\(city), \(state)' (key: '\(cityKey)')")
         }
 
         // Try partial match (in case of "Miami Beach" vs "Miami")
@@ -1051,6 +1062,17 @@ struct USCityCoordinates {
         "miami,FL": CLLocationCoordinate2D(latitude: 25.7617, longitude: -80.1918),
         "tampa,FL": CLLocationCoordinate2D(latitude: 27.9506, longitude: -82.4572),
         "orlando,FL": CLLocationCoordinate2D(latitude: 28.5383, longitude: -81.3792),
+        "winter park,FL": CLLocationCoordinate2D(latitude: 28.6000, longitude: -81.3392),
+        "kissimmee,FL": CLLocationCoordinate2D(latitude: 28.2920, longitude: -81.4076),
+        "altamonte springs,FL": CLLocationCoordinate2D(latitude: 28.6611, longitude: -81.3656),
+        "oviedo,FL": CLLocationCoordinate2D(latitude: 28.6700, longitude: -81.2081),
+        "lake mary,FL": CLLocationCoordinate2D(latitude: 28.7589, longitude: -81.3178),
+        "sanford,FL": CLLocationCoordinate2D(latitude: 28.8005, longitude: -81.2729),
+        "apopka,FL": CLLocationCoordinate2D(latitude: 28.6934, longitude: -81.5322),
+        "winter garden,FL": CLLocationCoordinate2D(latitude: 28.5653, longitude: -81.5861),
+        "windermere,FL": CLLocationCoordinate2D(latitude: 28.4989, longitude: -81.5362),
+        "maitland,FL": CLLocationCoordinate2D(latitude: 28.6278, longitude: -81.3631),
+        "casselberry,FL": CLLocationCoordinate2D(latitude: 28.6778, longitude: -81.3278),
         "jacksonville,FL": CLLocationCoordinate2D(latitude: 30.3322, longitude: -81.6557),
         "fort lauderdale,FL": CLLocationCoordinate2D(latitude: 26.1224, longitude: -80.1373),
 
@@ -1063,7 +1085,15 @@ struct USCityCoordinates {
 
         // New York
         "new york,NY": CLLocationCoordinate2D(latitude: 40.7128, longitude: -74.0060),
+        "manhattan,NY": CLLocationCoordinate2D(latitude: 40.7831, longitude: -73.9712),
         "brooklyn,NY": CLLocationCoordinate2D(latitude: 40.6782, longitude: -73.9442),
+        "queens,NY": CLLocationCoordinate2D(latitude: 40.7282, longitude: -73.7949),
+        "bronx,NY": CLLocationCoordinate2D(latitude: 40.8448, longitude: -73.8648),
+        "staten island,NY": CLLocationCoordinate2D(latitude: 40.5795, longitude: -74.1502),
+        "yonkers,NY": CLLocationCoordinate2D(latitude: 40.9312, longitude: -73.8987),
+        "rochester,NY": CLLocationCoordinate2D(latitude: 43.1566, longitude: -77.6088),
+        "syracuse,NY": CLLocationCoordinate2D(latitude: 43.0481, longitude: -76.1474),
+        "albany,NY": CLLocationCoordinate2D(latitude: 42.6526, longitude: -73.7562),
         "buffalo,NY": CLLocationCoordinate2D(latitude: 42.8864, longitude: -78.8784),
 
         // Texas

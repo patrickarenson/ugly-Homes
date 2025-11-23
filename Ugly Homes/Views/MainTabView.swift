@@ -14,6 +14,10 @@ struct MainTabView: View {
     @State private var deepLinkedProfile: Profile? = nil
     @State private var searchText = ""
     @State private var selectedTab = 0
+    @State private var showOnboarding = false
+    @State private var currentUserId: UUID?
+    @State private var currentUsername: String?
+    @State private var hasCheckedOnboarding = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -73,9 +77,42 @@ struct MainTabView: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ShowHomeOnMap"))) { notification in
+            if let homeId = notification.userInfo?["homeId"] as? UUID {
+                print("🗺️ Received ShowHomeOnMap notification for: \(homeId)")
+                selectedTab = 1 // Switch to Map tab
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReturnToTrendingFromMap"))) { notification in
+            print("🔙 Returning to Trending tab from map")
+            selectedTab = 0 // Switch back to Trending tab
+
+            // Give the tab switch a moment to complete, then notify FeedView to scroll
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                if let homeId = notification.userInfo?["homeId"] as? UUID {
+                    print("📍 Forwarding homeId to FeedView: \(homeId)")
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("ScrollToHome"),
+                        object: nil,
+                        userInfo: ["homeId": homeId]
+                    )
+                }
+            }
+        }
+        .onChange(of: selectedTab) { oldTab, newTab in
+            // Clear map highlight when leaving map tab
+            if oldTab == 1 && newTab != 1 {
+                print("🗺️ Left map tab, clearing highlight")
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("ClearMapHighlight"),
+                    object: nil
+                )
+            }
+        }
         .onAppear {
             unreadManager.startPolling()
             checkForDeepLink()
+            checkOnboardingStatus()
         }
         .onDisappear {
             unreadManager.stopPolling()
@@ -138,6 +175,58 @@ struct MainTabView: View {
                         }
                         .foregroundColor(.orange)
                     })
+            }
+        }
+        .fullScreenCover(isPresented: $showOnboarding) {
+            if let userId = currentUserId, let username = currentUsername {
+                OnboardingView(userId: userId, existingUsername: username)
+            }
+        }
+    }
+
+    func checkOnboardingStatus() {
+        // Only check once per session
+        guard !hasCheckedOnboarding else {
+            print("ℹ️ Already checked onboarding for this session, skipping")
+            return
+        }
+
+        hasCheckedOnboarding = true
+
+        Task {
+            do {
+                // Get current user
+                let session = try await SupabaseManager.shared.client.auth.session
+                let userId = session.user.id
+                currentUserId = userId
+
+                // Get user's profile to check username and onboarding status
+                let profiles: [Profile] = try await SupabaseManager.shared.client
+                    .from("profiles")
+                    .select()
+                    .eq("id", value: userId.uuidString)
+                    .execute()
+                    .value
+
+                if let profile = profiles.first {
+                    currentUsername = profile.username
+
+                    // Check if user has completed onboarding (from database)
+                    let hasCompletedOnboarding = profile.hasCompletedOnboarding ?? false
+
+                    print("✅ Onboarding check: hasCompleted=\(hasCompletedOnboarding) for user \(userId.uuidString)")
+
+                    if !hasCompletedOnboarding {
+                        await MainActor.run {
+                            // Small delay to let the UI settle
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                showOnboarding = true
+                            }
+                        }
+                    }
+                }
+            } catch {
+                print("❌ Error checking onboarding status: \(error)")
             }
         }
     }

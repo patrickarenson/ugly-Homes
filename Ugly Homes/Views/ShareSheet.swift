@@ -175,15 +175,6 @@ struct ShareSheet: View {
                                     shareViaWhatsApp()
                                 }
 
-                                // Facebook
-                                ShareOptionButton(
-                                    icon: "f.circle.fill",
-                                    title: "Facebook",
-                                    color: Color(red: 0.23, green: 0.35, blue: 0.6)
-                                ) {
-                                    shareViaFacebook()
-                                }
-
                                 // Email (Gmail)
                                 ShareOptionButton(
                                     icon: "envelope.fill",
@@ -361,35 +352,16 @@ struct ShareSheet: View {
             if let shareImage = await createShareImage() {
                 print("✅ Composite image created! Size: \(shareImage.size)")
 
-                // Save to temporary file
-                if let imageData = shareImage.jpegData(compressionQuality: 0.9) {
-                    print("✅ Image converted to JPEG: \(imageData.count) bytes")
-
-                    let tempDir = FileManager.default.temporaryDirectory
-                    let fileName = "housers-share-\(UUID().uuidString).jpg"
-                    let fileURL = tempDir.appendingPathComponent(fileName)
-
-                    do {
-                        try imageData.write(to: fileURL)
-                        print("✅ Saved composite image to: \(fileURL.path)")
-                        itemsToShare.append(fileURL)
-                    } catch {
-                        print("❌ Failed to save composite: \(error.localizedDescription)")
-                    }
-                } else {
-                    print("❌ Failed to convert composite to JPEG")
-                }
+                // Use UIImage directly instead of file URL to avoid file provider issues
+                itemsToShare.append(shareImage)
             } else {
                 print("⚠️ Composite generation failed, using original image")
                 // Fallback to original image
                 if let imageUrl = home.imageUrls.first, let url = URL(string: imageUrl) {
                     do {
                         let (data, _) = try await URLSession.shared.data(from: url)
-                        if let image = UIImage(data: data), let jpegData = image.jpegData(compressionQuality: 0.9) {
-                            let tempDir = FileManager.default.temporaryDirectory
-                            let fileURL = tempDir.appendingPathComponent("housers-original-\(UUID().uuidString).jpg")
-                            try jpegData.write(to: fileURL)
-                            itemsToShare.append(fileURL)
+                        if let image = UIImage(data: data) {
+                            itemsToShare.append(image)
                             print("✅ Using original image as fallback")
                         }
                     } catch {
@@ -619,35 +591,16 @@ struct ShareSheet: View {
             if let shareImage = await createShareImage() {
                 print("✅ Composite image created! Size: \(shareImage.size)")
 
-                // Save to temporary file
-                if let imageData = shareImage.jpegData(compressionQuality: 0.9) {
-                    print("✅ Image converted to JPEG: \(imageData.count) bytes")
-
-                    let tempDir = FileManager.default.temporaryDirectory
-                    let fileName = "housers-share-\(UUID().uuidString).jpg"
-                    let fileURL = tempDir.appendingPathComponent(fileName)
-
-                    do {
-                        try imageData.write(to: fileURL)
-                        print("✅ Saved composite image to: \(fileURL.path)")
-                        itemsToShare.append(fileURL)
-                    } catch {
-                        print("❌ Failed to save composite: \(error.localizedDescription)")
-                    }
-                } else {
-                    print("❌ Failed to convert composite to JPEG")
-                }
+                // Use UIImage directly instead of file URL to avoid file provider issues
+                itemsToShare.append(shareImage)
             } else {
                 print("⚠️ Composite generation failed, using original image")
                 // Fallback to original image
                 if let imageUrl = home.imageUrls.first, let url = URL(string: imageUrl) {
                     do {
                         let (data, _) = try await URLSession.shared.data(from: url)
-                        if let image = UIImage(data: data), let jpegData = image.jpegData(compressionQuality: 0.9) {
-                            let tempDir = FileManager.default.temporaryDirectory
-                            let fileURL = tempDir.appendingPathComponent("housers-original-\(UUID().uuidString).jpg")
-                            try jpegData.write(to: fileURL)
-                            itemsToShare.append(fileURL)
+                        if let image = UIImage(data: data) {
+                            itemsToShare.append(image)
                             print("✅ Using original image as fallback")
                         }
                     } catch {

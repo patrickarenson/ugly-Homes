@@ -21,6 +21,9 @@ struct LocationFeedView: View {
     @State private var showOpenHouseList = false
     @StateObject private var locationManager = LocationManager()
     @State private var savedOpenHouseIds: Set<UUID> = []
+    @State private var bookmarkedHomeIds: Set<UUID> = []
+    @State private var highlightedHomeId: UUID? = nil
+    @State private var isLoadingHighlightedHome = false
     @State private var lastViewedOpenHouseCount = UserDefaults.standard.integer(forKey: "lastViewedOpenHouseCount")
 
     let usStates = ["All", "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
@@ -105,6 +108,25 @@ struct LocationFeedView: View {
             VStack(spacing: 0) {
                 // Header bar (search bar only shows in list view)
                 HStack(spacing: 12) {
+                    // Back button - only show when on map with highlighted property
+                    if showMapView && highlightedHomeId != nil {
+                        Button(action: {
+                            // Post notification to switch back to trending tab with homeId
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("ReturnToTrendingFromMap"),
+                                object: nil,
+                                userInfo: ["homeId": highlightedHomeId as Any]
+                            )
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Text("Back")
+                                    .font(.system(size: 16))
+                            }
+                            .foregroundColor(.orange)
+                        }
+                    }
                     // Open House List button - COMMENTED OUT for App Store submission
                     // TODO: Re-enable once fully tested
 //                    Button(action: {
@@ -184,13 +206,36 @@ struct LocationFeedView: View {
 
                 // Show either map or list view
                 if showMapView {
-                    PropertyMapView(
-                        homes: filteredHomes,
-                        userLocation: locationManager.location,
-                        selectedHome: $selectedHome
-                    )
-                    .onTapGesture {
-                        hideKeyboard()
+                    ZStack {
+                        PropertyMapView(
+                            homes: filteredHomes,
+                            userLocation: locationManager.location,
+                            selectedHome: $selectedHome,
+                            bookmarkedHomeIds: bookmarkedHomeIds,
+                            highlightedHomeId: highlightedHomeId,
+                            isLoadingHighlightedHome: $isLoadingHighlightedHome
+                        )
+                        .onTapGesture {
+                            hideKeyboard()
+                        }
+
+                        // Loading overlay when finding property on map
+                        if isLoadingHighlightedHome {
+                            VStack(spacing: 12) {
+                                ProgressView()
+                                    .scaleEffect(1.2)
+
+                                Text("Finding property on map...")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 40)
+                            }
+                            .padding(20)
+                            .background(Color(.systemBackground).opacity(0.95))
+                            .cornerRadius(12)
+                            .shadow(radius: 5)
+                        }
                     }
                 } else {
                     // List view
@@ -302,6 +347,7 @@ struct LocationFeedView: View {
                 showMapView = true
                 loadHomes()
                 loadSavedOpenHouses()
+                loadBookmarks()
                 locationManager.requestLocation()
             }
             .onChange(of: showOpenHouseList) { oldValue, newValue in
@@ -317,6 +363,38 @@ struct LocationFeedView: View {
             }
             .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("RefreshFeed"))) { _ in
                 loadHomes()
+            }
+            .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("ShowHomeOnMap"))) { notification in
+                if let homeId = notification.userInfo?["homeId"] as? UUID {
+                    print("🗺️ LocationFeedView received ShowHomeOnMap for: \(homeId)")
+                    highlightedHomeId = homeId
+                    showMapView = true // Ensure map is showing
+
+                    // Always show loading initially
+                    isLoadingHighlightedHome = true
+
+                    // Safety timeout - turn off loading after 3 seconds max (should be instant with fallback)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        if self.isLoadingHighlightedHome {
+                            print("⏱️ Loading timeout - turning off loading indicator after 3s")
+                            self.isLoadingHighlightedHome = false
+                        }
+                    }
+
+                    // If homes aren't loaded yet, load them
+                    if homes.isEmpty {
+                        print("🔄 Homes not loaded yet, loading now...")
+                        loadHomesAndZoom(to: homeId)
+                    } else {
+                        // Homes already loaded, but we still need to wait for geocoding/positioning
+                        print("🗺️ Homes already loaded, waiting for geocoding...")
+                    }
+                }
+            }
+            .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("ClearMapHighlight"))) { _ in
+                print("🗺️ Clearing map highlight")
+                highlightedHomeId = nil
+                isLoadingHighlightedHome = false
             }
         }
     }
@@ -432,6 +510,92 @@ struct LocationFeedView: View {
             }
         }
     }
+
+    func loadBookmarks() {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+
+                struct BookmarkRecord: Decodable {
+                    let home_id: UUID
+                }
+
+                let bookmarks: [BookmarkRecord] = try await SupabaseManager.shared.client
+                    .from("bookmarks")
+                    .select("home_id")
+                    .eq("user_id", value: userId.uuidString)
+                    .execute()
+                    .value
+
+                await MainActor.run {
+                    bookmarkedHomeIds = Set(bookmarks.map { $0.home_id })
+                    print("✅ Loaded \(bookmarkedHomeIds.count) bookmarked homes for map")
+                }
+            } catch {
+                print("❌ Error loading bookmarks: \(error)")
+            }
+        }
+    }
+
+    func loadHomesAndZoom(to homeId: UUID) {
+        Task {
+            do {
+                print("📥 Loading specific home to highlight on map...")
+
+                // First, load the specific home we want to highlight
+                let highlightedResponse: [Home] = try await SupabaseManager.shared.client
+                    .from("homes")
+                    .select("*, profile:user_id(*)")
+                    .eq("id", value: homeId.uuidString)
+                    .execute()
+                    .value
+
+                // Then load all other homes for the map
+                let response: [Home] = try await SupabaseManager.shared.client
+                    .from("homes")
+                    .select("*, profile:user_id(*)")
+                    .eq("is_active", value: true)
+                    .eq("is_archived", value: false)
+                    .order("state", ascending: true)
+                    .order("city", ascending: true)
+                    .limit(50)
+                    .execute()
+                    .value
+
+                // Combine highlighted home with all other homes (avoid duplicates)
+                var allLoadedHomes = response
+                if let highlightedHome = highlightedResponse.first,
+                   !allLoadedHomes.contains(where: { $0.id == highlightedHome.id }) {
+                    allLoadedHomes.insert(highlightedHome, at: 0)
+                }
+
+                // Filter out sold/leased properties and projects
+                let activeListings = allLoadedHomes.filter { home in
+                    // Keep the highlighted home regardless of status
+                    if home.id == homeId {
+                        return true
+                    }
+                    let isNotSoldOrLeased = home.soldStatus == nil || (home.soldStatus != "sold" && home.soldStatus != "leased")
+                    let isNotProject = home.postType != "project"
+                    return isNotSoldOrLeased && isNotProject
+                }
+
+                await MainActor.run {
+                    print("✅ Loaded \(activeListings.count) homes for map (including highlighted)")
+                    homes = activeListings
+                    allHomes = activeListings
+                    isLoading = false
+                    isLoadingHighlightedHome = false
+                }
+            } catch {
+                print("❌ Error loading homes: \(error)")
+                await MainActor.run {
+                    isLoading = false
+                    isLoadingHighlightedHome = false
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Location Manager
@@ -481,49 +645,44 @@ struct PropertyMapView: View {
     let homes: [Home]
     let userLocation: CLLocationCoordinate2D?
     @Binding var selectedHome: Home?
-    @State private var region = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 28.5383, longitude: -81.3792), // Orlando, Florida
-        span: MKCoordinateSpan(latitudeDelta: 1.0, longitudeDelta: 1.0) // Show Central Florida area
+    let bookmarkedHomeIds: Set<UUID>
+    let highlightedHomeId: UUID?
+    @Binding var isLoadingHighlightedHome: Bool
+    @State private var cameraPosition: MapCameraPosition = .region(
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 28.5383, longitude: -81.3792),
+            span: MKCoordinateSpan(latitudeDelta: 1.0, longitudeDelta: 1.0)
+        )
     )
     @State private var geocodedCoordinates: [UUID: CLLocationCoordinate2D] = [:]
     @State private var isGeocoding = false
-    @State private var isLoadingLocation = true
 
     var body: some View {
-        ZStack {
-            Map(position: .constant(.region(region))) {
-                ForEach(mapAnnotations) { annotation in
-                    Annotation("", coordinate: annotation.coordinate) {
-                        annotationView(for: annotation)
-                    }
+        Map(position: $cameraPosition) {
+            ForEach(mapAnnotations) { annotation in
+                Annotation("", coordinate: annotation.coordinate) {
+                    annotationView(for: annotation)
                 }
-            }
-
-            // Loading overlay
-            if isLoadingLocation {
-                VStack(spacing: 12) {
-                    ProgressView()
-                        .scaleEffect(1.2)
-
-                    Text("Customizing your search based on your location...")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                }
-                .padding(20)
-                .background(Color(.systemBackground).opacity(0.95))
-                .cornerRadius(12)
-                .shadow(radius: 5)
             }
         }
         .onAppear {
             updateRegion()
             geocodeAllHomes()
-
-            // Hide loading message after 2 seconds or when location is found
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                isLoadingLocation = false
+        }
+        .onChange(of: highlightedHomeId) { _, newValue in
+            print("🗺️ PropertyMapView detected highlighted ID change: \(String(describing: newValue))")
+            if newValue != nil {
+                // Trigger geocoding for the new highlighted home
+                geocodeAllHomes()
+            }
+            updateRegion()
+        }
+        .onChange(of: homes.count) { _, _ in
+            // When homes are loaded, update region if there's a highlighted home
+            if highlightedHomeId != nil {
+                print("🗺️ Homes loaded, geocoding and updating region for highlighted home")
+                geocodeAllHomes()
+                updateRegion()
             }
         }
     }
@@ -540,6 +699,66 @@ struct PropertyMapView: View {
                         .stroke(Color.white, lineWidth: 3)
                 )
                 .shadow(radius: 3)
+        } else if let home = annotation.home, highlightedHomeId == home.id {
+            // Highlighted home from post - black pin (stands out!)
+            VStack(spacing: 0) {
+                // Price tag
+                if let price = home.price {
+                    Text("$\(formatPrice(price))")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.black)
+                        .cornerRadius(8)
+                }
+
+                // Black pin
+                Image(systemName: "mappin.circle.fill")
+                    .font(.title)
+                    .foregroundColor(.black)
+                    .background(
+                        Circle()
+                            .fill(Color.white)
+                            .frame(width: 20, height: 20)
+                    )
+                    .shadow(radius: 3)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selectedHome = home
+            }
+        } else if let home = annotation.home, bookmarkedHomeIds.contains(home.id) {
+            // Saved/Bookmarked homes - red heart
+            VStack(spacing: 0) {
+                // Price tag
+                if let price = home.price {
+                    Text("$\(formatPrice(price))")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.red)
+                        .cornerRadius(8)
+                }
+
+                // Heart icon
+                Image(systemName: "heart.fill")
+                    .font(.title)
+                    .foregroundColor(.red)
+                    .background(
+                        Circle()
+                            .fill(Color.white)
+                            .frame(width: 24, height: 24)
+                    )
+                    .shadow(radius: 2)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selectedHome = home
+            }
         } else {
             // Property pin - purple for rentals, orange for sales
             VStack(spacing: 0) {
@@ -616,65 +835,146 @@ struct PropertyMapView: View {
     }
 
     func geocodeAllHomes() {
+        // Prioritize highlighted home first - ALWAYS re-geocode to ensure accuracy
+        if let highlightedId = highlightedHomeId,
+           let highlightedHome = homes.first(where: { $0.id == highlightedId }) {
+            print("🎯 Prioritizing geocoding for highlighted home...")
+            // Clear cached coordinate to force fresh geocode
+            geocodedCoordinates.removeValue(forKey: highlightedId)
+            geocodeHome(highlightedHome, priority: true)
+        }
+
         guard !isGeocoding else { return }
         isGeocoding = true
 
         for home in homes {
-            // Skip if already geocoded
+            // Skip if already geocoded or currently being prioritized
             guard geocodedCoordinates[home.id] == nil else { continue }
 
-            // Build full address string
-            var addressComponents: [String] = []
-            if let address = home.address, !address.isEmpty {
-                addressComponents.append(address)
-            }
-            if let city = home.city, !city.isEmpty {
-                addressComponents.append(city)
-            }
-            if let state = home.state, !state.isEmpty {
-                addressComponents.append(state)
-            }
-            if let zipCode = home.zipCode, !zipCode.isEmpty {
-                addressComponents.append(zipCode)
-            }
-
-            guard !addressComponents.isEmpty else { continue }
-
-            let fullAddress = addressComponents.joined(separator: ", ")
-
-            // Geocode the address
-            let geocoder = CLGeocoder()
-            geocoder.geocodeAddressString(fullAddress) { [home] placemarks, error in
-                if let error = error {
-                    print("⚠️ Geocoding failed for '\(fullAddress)': \(error.localizedDescription)")
-                    return
-                }
-
-                if let location = placemarks?.first?.location {
-                    DispatchQueue.main.async {
-                        self.geocodedCoordinates[home.id] = location.coordinate
-                        print("✅ Geocoded: \(fullAddress) -> \(location.coordinate.latitude), \(location.coordinate.longitude)")
-                    }
-                }
-            }
+            geocodeHome(home, priority: false)
         }
 
         isGeocoding = false
     }
 
+    func geocodeHome(_ home: Home, priority: Bool) {
+        // For priority (highlighted) homes, use city/state fallback IMMEDIATELY for fast display
+        // Then try full geocoding in background for accuracy
+        if priority, let fallbackCoordinate = getCoordinate(for: home) {
+            print("⚡ Using immediate fallback coordinate for fast display")
+            DispatchQueue.main.async {
+                self.geocodedCoordinates[home.id] = fallbackCoordinate
+                self.updateRegion()
+                // Turn off loading after map positions
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    self.isLoadingHighlightedHome = false
+                }
+            }
+        }
+
+        // Build full address string
+        var addressComponents: [String] = []
+        if let address = home.address, !address.isEmpty {
+            addressComponents.append(address)
+        }
+        if let city = home.city, !city.isEmpty {
+            addressComponents.append(city)
+        }
+        if let state = home.state, !state.isEmpty {
+            addressComponents.append(state)
+        }
+        if let zipCode = home.zipCode, !zipCode.isEmpty {
+            addressComponents.append(zipCode)
+        }
+
+        guard !addressComponents.isEmpty else {
+            print("⚠️ No address components for home \(home.id)")
+            if priority && !geocodedCoordinates.keys.contains(home.id) {
+                print("❌ No coordinate available for highlighted home")
+                DispatchQueue.main.async {
+                    self.isLoadingHighlightedHome = false
+                }
+            }
+            return
+        }
+
+        let fullAddress = addressComponents.joined(separator: ", ")
+
+        // Geocode the address for precision (this happens in background)
+        let geocoder = CLGeocoder()
+        geocoder.geocodeAddressString(fullAddress) { [home, self] placemarks, error in
+            if let error = error {
+                print("⚠️ Geocoding failed for '\(fullAddress)': \(error.localizedDescription)")
+                // Fallback already used above if priority, so just log the error
+                return
+            }
+
+            if let location = placemarks?.first?.location {
+                DispatchQueue.main.async {
+                    let oldCoordinate = self.geocodedCoordinates[home.id]
+                    self.geocodedCoordinates[home.id] = location.coordinate
+
+                    if priority {
+                        print("✅ 🎯 PRECISION Geocoded: \(fullAddress) -> \(location.coordinate.latitude), \(location.coordinate.longitude)")
+                        // Only update region if this is more precise than fallback
+                        if oldCoordinate == nil || self.distance(from: oldCoordinate!, to: location.coordinate) > 100 {
+                            print("📍 Refining map position with precise coordinate")
+                            self.updateRegion()
+                        }
+                    } else {
+                        print("✅ Geocoded: \(fullAddress) -> \(location.coordinate.latitude), \(location.coordinate.longitude)")
+                    }
+                }
+            }
+        }
+    }
+
+    func distance(from coord1: CLLocationCoordinate2D, to coord2: CLLocationCoordinate2D) -> Double {
+        let loc1 = CLLocation(latitude: coord1.latitude, longitude: coord1.longitude)
+        let loc2 = CLLocation(latitude: coord2.latitude, longitude: coord2.longitude)
+        return loc1.distance(from: loc2) // Returns meters
+    }
+
     func updateRegion() {
-        // Center on user location if available (priority #1)
-        if let userLocation = userLocation {
-            region.center = userLocation
-            region.span = MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2) // Show ~20 mile radius
-            isLoadingLocation = false // Hide loading message
+        // Priority #1: Center on highlighted home if specified (from pin drop button)
+        if let highlightedId = highlightedHomeId,
+           let highlightedHome = homes.first(where: { $0.id == highlightedId }) {
+            // Try geocoded coordinate first (most accurate), then fallback to city/state database
+            let coordinate = geocodedCoordinates[highlightedId] ?? getCoordinate(for: highlightedHome)
+
+            if let coordinate = coordinate {
+                withAnimation(.easeInOut(duration: 0.5)) {
+                    cameraPosition = .region(MKCoordinateRegion(
+                        center: coordinate,
+                        span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05) // Zoom in close
+                    ))
+                }
+                print("📍 Map centered on highlighted home: \(highlightedHome.address ?? "unknown address")")
+
+                // Turn off loading indicator after map animation completes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    self.isLoadingHighlightedHome = false
+                }
+            } else {
+                print("⚠️ No coordinate found for highlighted home \(highlightedId)")
+                // No coordinate available, turn off loading
+                isLoadingHighlightedHome = false
+            }
+        }
+        // Priority #2: Center on user location if available
+        else if let userLocation = userLocation {
+            cameraPosition = .region(MKCoordinateRegion(
+                center: userLocation,
+                span: MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2) // Show ~20 mile radius
+            ))
             print("📍 Map centered on user location: \(userLocation.latitude), \(userLocation.longitude)")
         }
-        // Otherwise, if we have homes, center on first home
+        // Priority #3: If we have homes, center on first home
         else if let firstHome = homes.first, let coordinate = getCoordinate(for: firstHome) {
-            region.center = coordinate
-            region.span = MKCoordinateSpan(latitudeDelta: 1.0, longitudeDelta: 1.0)
-            isLoadingLocation = false // Hide loading message
+            cameraPosition = .region(MKCoordinateRegion(
+                center: coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 1.0, longitudeDelta: 1.0)
+            ))
             print("📍 Map centered on first home: \(firstHome.city ?? "unknown city")")
         }
         // Otherwise keep showing Orlando, FL

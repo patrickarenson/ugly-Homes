@@ -36,6 +36,108 @@ class DeepLinkManager: ObservableObject {
         print("🔗 URL host: \(url.host ?? "none")")
         print("🔗 URL path: \(url.path)")
 
+        // Check if this is an OAuth callback
+        if url.host == "oauth-callback" || url.path.contains("oauth-callback") {
+            print("🔑 OAuth callback detected, handling session")
+            Task {
+                do {
+                    // Parse tokens from URL fragment (implicit flow)
+                    let fragment = url.fragment ?? ""
+                    let params = fragment.components(separatedBy: "&").reduce(into: [String: String]()) { result, param in
+                        let parts = param.components(separatedBy: "=")
+                        if parts.count == 2 {
+                            result[parts[0]] = parts[1]
+                        }
+                    }
+
+                    guard let accessToken = params["access_token"],
+                          let refreshToken = params["refresh_token"] else {
+                        print("❌ Missing tokens in OAuth callback")
+                        return
+                    }
+
+                    // Set the session with the tokens
+                    try await SupabaseManager.shared.client.auth.setSession(accessToken: accessToken, refreshToken: refreshToken)
+                    print("✅ OAuth session established successfully")
+
+                    // Get the session to create profile if needed
+                    let session = try await SupabaseManager.shared.client.auth.session
+
+                    // For OAuth users, create username from email or provider data
+                    let email = session.user.email ?? ""
+                    let defaultUsername = email.components(separatedBy: "@").first?.lowercased() ?? "user\(session.user.id.uuidString.prefix(8))"
+
+                    // Check if profile exists, if not create one
+                    let profiles: [Profile] = try await SupabaseManager.shared.client
+                        .from("profiles")
+                        .select()
+                        .eq("id", value: session.user.id.uuidString)
+                        .execute()
+                        .value
+
+                    if profiles.isEmpty {
+                        print("📝 Creating profile for OAuth user")
+                        // Create profile for OAuth user
+                        struct NewProfile: Encodable {
+                            let id: String
+                            let username: String
+                            let full_name: String?
+                        }
+
+                        let newProfile = NewProfile(
+                            id: session.user.id.uuidString,
+                            username: defaultUsername,
+                            full_name: session.user.userMetadata["full_name"] as? String
+                        )
+
+                        try await SupabaseManager.shared.client
+                            .from("profiles")
+                            .insert(newProfile)
+                            .execute()
+
+                        print("✅ Profile created for OAuth user: \(defaultUsername)")
+                    }
+
+                    // Save terms acceptance for OAuth users
+                    struct TermsData: Encodable {
+                        let user_id: String
+                        let accepted_at: String
+                        let terms_version: String
+                    }
+
+                    let termsData = TermsData(
+                        user_id: session.user.id.uuidString,
+                        accepted_at: ISO8601DateFormatter().string(from: Date()),
+                        terms_version: "1.0"
+                    )
+
+                    try await SupabaseManager.shared.client
+                        .from("terms_acceptance")
+                        .insert(termsData)
+                        .execute()
+
+                    print("✅ Terms acceptance saved for OAuth user")
+
+                    // Post notification to trigger auth state change
+                    await MainActor.run {
+                        NotificationCenter.default.post(name: .supabaseAuthStateChanged, object: nil)
+
+                        // Request push notification permission
+                        NotificationManager.shared.requestPermission { granted in
+                            if granted {
+                                print("✅ Push notifications enabled")
+                            } else {
+                                print("⚠️ Push notifications declined")
+                            }
+                        }
+                    }
+                } catch {
+                    print("❌ OAuth callback error: \(error)")
+                }
+            }
+            return
+        }
+
         // Parse URL - handle both custom scheme (housers://) and universal links (https://)
         let pathComponents = url.pathComponents
         print("🔗 Path components: \(pathComponents)")

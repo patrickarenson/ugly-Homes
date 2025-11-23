@@ -17,6 +17,8 @@ struct FeedView: View {
     @State private var showNotifications = false
     @State private var unreadNotificationsCount = 0
     @State private var newlyCreatedPostIds: Set<UUID> = [] // Track posts created this session
+    @State private var savedScrollHomeId: UUID? = nil // Saved position for map navigation
+    @State private var shouldScrollToSaved = false // Trigger to restore position
 
     // Pagination state
     @State private var currentOffset = 0
@@ -198,22 +200,24 @@ struct FeedView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            if !filteredHomes.isEmpty {
-                                ForEach(Array(filteredHomes.enumerated()), id: \.element.id) { index, home in
-                                    HomePostView(home: home, searchText: $searchText)
-                                        .id("\(home.id)-\(home.soldStatus ?? "none")-\(home.updatedAt.timeIntervalSince1970)-\(home.tags?.joined(separator: ",") ?? "")")
-                                        .padding(.bottom, 16)
-                                        .onAppear {
-                                            // Prefetch trigger: Load more when user reaches 3rd-to-last item
-                                            if index == filteredHomes.count - 3 && !isLoadingMore && hasMoreData && searchText.isEmpty {
-                                                print("📥 Prefetch triggered at index \(index)/\(filteredHomes.count)")
-                                                loadMoreHomes()
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                if !filteredHomes.isEmpty {
+                                    ForEach(Array(filteredHomes.enumerated()), id: \.element.id) { index, home in
+                                        HomePostView(home: home, searchText: $searchText)
+                                            .id(home.id) // Use just the home ID for scroll positioning
+                                            .padding(.bottom, 16)
+                                            .onAppear {
+                                                // Prefetch trigger: Load more when user reaches 3rd-to-last item
+                                                if index == filteredHomes.count - 3 && !isLoadingMore && hasMoreData && searchText.isEmpty {
+                                                    print("📥 Prefetch triggered at index \(index)/\(filteredHomes.count)")
+                                                    loadMoreHomes()
+                                                }
+                                                // Preload images for next 2 properties
+                                                preloadImages(startingAt: index + 1, count: 2)
                                             }
-                                            // Preload images for next 2 properties
-                                            preloadImages(startingAt: index + 1, count: 2)
-                                        }
+                                    }
                                 }
 
                                 // Loading indicator at bottom
@@ -224,6 +228,21 @@ struct FeedView: View {
                                             .padding()
                                         Spacer()
                                     }
+                                }
+                            }
+                        }
+                        .onChange(of: shouldScrollToSaved) { _, shouldScroll in
+                            if shouldScroll, let homeId = savedScrollHomeId {
+                                print("📜 Scrolling to saved home: \(homeId)")
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    withAnimation {
+                                        proxy.scrollTo(homeId, anchor: .top)
+                                    }
+                                }
+                                // Reset flags
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    shouldScrollToSaved = false
+                                    savedScrollHomeId = nil
                                 }
                             }
                         }
@@ -280,6 +299,22 @@ struct FeedView: View {
                 if let tag = notification.userInfo?["searchText"] as? String {
                     print("🔍 Setting search text from notification: \(tag)")
                     searchText = tag
+                }
+            }
+            .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("ShowHomeOnMap"))) { notification in
+                if let homeId = notification.userInfo?["homeId"] as? UUID {
+                    print("📍 Saving scroll position for home: \(homeId)")
+                    savedScrollHomeId = homeId
+                }
+            }
+            .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("ScrollToHome"))) { notification in
+                print("🔙 Received ScrollToHome notification")
+                if let homeId = notification.userInfo?["homeId"] as? UUID {
+                    print("📍 Scrolling to home: \(homeId)")
+                    savedScrollHomeId = homeId
+                    shouldScrollToSaved = true
+                } else {
+                    print("⚠️ No homeId in ScrollToHome notification")
                 }
             }
         }
@@ -961,35 +996,13 @@ struct HomePostView: View {
                         ProfileView(viewingUserId: profile.id)
                     }
                 }) {
-                    // Profile photo
-                    if let avatarUrl = home.profile?.avatarUrl, !avatarUrl.isEmpty, let url = URL(string: avatarUrl) {
-                        // Add timestamp to prevent caching
-                        let urlWithCache = URL(string: "\(avatarUrl)?t=\(Date().timeIntervalSince1970)")
-                        AsyncImage(url: urlWithCache ?? url) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 32, height: 32)
-                                .clipShape(Circle())
-                        } placeholder: {
-                            Circle()
-                                .fill(Color.gray.opacity(0.3))
-                                .frame(width: 32, height: 32)
-                                .overlay(
-                                    Image(systemName: "person.fill")
-                                        .font(.caption)
-                                        .foregroundColor(.white)
-                                )
-                        }
-                    } else {
-                        Circle()
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(width: 32, height: 32)
-                            .overlay(
-                                Image(systemName: "person.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.white)
-                            )
+                    // Profile photo with initial fallback
+                    if let profile = home.profile {
+                        AvatarView(
+                            avatarUrl: profile.avatarUrl,
+                            username: profile.username,
+                            size: 32
+                        )
                     }
                 }
                 .buttonStyle(.plain)
@@ -1102,16 +1115,33 @@ struct HomePostView: View {
             .padding(.horizontal)
             .padding(.vertical, 10)
 
-            // Tags
-            if let tags = home.tags, !tags.isEmpty {
-                TagListView(tags: tags, maxTags: 4) { tag in
-                    // Filter feed by tag
-                    searchText = tag
-                    print("🏷️ Tapped tag: \(tag) - Filtering feed")
+            // Tags row with map pin button (pin aligns under three dots)
+            HStack(alignment: .center, spacing: 8) {
+                // Tags
+                if let tags = home.tags, !tags.isEmpty {
+                    TagListView(tags: tags, maxTags: 4) { tag in
+                        // Filter feed by tag
+                        searchText = tag
+                        print("🏷️ Tapped tag: \(tag) - Filtering feed")
+                    }
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
+
+                Spacer()
+
+                // Map pin button - Show on map (only for listings with addresses)
+                if (home.address != nil && !home.address!.isEmpty) ||
+                   (home.city != nil && home.state != nil) {
+                    Button(action: {
+                        showOnMap()
+                    }) {
+                        Image(systemName: "mappin.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.black)
+                    }
+                }
             }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
 
             // Image Carousel
             VStack(spacing: 0) {
@@ -1750,6 +1780,16 @@ struct HomePostView: View {
                 isBookmarked.toggle()
             }
         }
+    }
+
+    func showOnMap() {
+        print("📍 Showing home on map: \(home.id)")
+        // Post notification to switch to map tab and highlight this property
+        NotificationCenter.default.post(
+            name: NSNotification.Name("ShowHomeOnMap"),
+            object: nil,
+            userInfo: ["homeId": home.id]
+        )
     }
 
     func shareHome() {

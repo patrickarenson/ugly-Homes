@@ -843,32 +843,13 @@ struct CommentRow: View {
                     ProfileView(viewingUserId: profile.id)
                 }
             }) {
-                if let avatarUrl = comment.profile?.avatarUrl, !avatarUrl.isEmpty, let url = URL(string: avatarUrl) {
-                    AsyncImage(url: url) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 36, height: 36)
-                            .clipShape(Circle())
-                    } placeholder: {
-                        Circle()
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(width: 36, height: 36)
-                            .overlay(
-                                Image(systemName: "person.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.white)
-                            )
-                    }
-                } else {
-                    Circle()
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(width: 36, height: 36)
-                        .overlay(
-                            Image(systemName: "person.fill")
-                                .font(.caption)
-                                .foregroundColor(.white)
-                        )
+                // Profile photo with initial fallback
+                if let profile = comment.profile {
+                    AvatarView(
+                        avatarUrl: profile.avatarUrl,
+                        username: profile.username,
+                        size: 36
+                    )
                 }
             }
 

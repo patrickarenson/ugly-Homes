@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Supabase
+import AuthenticationServices
 
 struct AuthView: View {
     @State private var email = ""
@@ -193,6 +194,37 @@ struct AuthView: View {
                     .cornerRadius(12)
                     .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
                     .disabled(isLoading || (isSignUp && !acceptedTermsCheckbox))
+
+                    // OR divider
+                    HStack(spacing: 12) {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.3))
+                            .frame(height: 1)
+                        Text("OR")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                        Rectangle()
+                            .fill(Color.white.opacity(0.3))
+                            .frame(height: 1)
+                    }
+                    .padding(.vertical, 8)
+
+                    // Social login buttons
+                    // Google Sign In
+                    Button(action: { handleSocialLogin(provider: .google) }) {
+                        HStack {
+                            Image(systemName: "g.circle.fill")
+                                .font(.system(size: 20))
+                            Text("Continue with Google")
+                                .font(.system(size: 15, weight: .medium))
+                        }
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.white)
+                        .cornerRadius(12)
+                    }
+                    .disabled(isLoading)
 
                     // Biometric login button
                     if !isSignUp && hasSavedCredentials && biometricType != .none {
@@ -430,6 +462,70 @@ struct AuthView: View {
         }
     }
 
+    func handleSocialLogin(provider: Provider) {
+        errorMessage = ""
+        isLoading = true
+
+        Task {
+            do {
+                // Construct OAuth URL for ASWebAuthenticationSession
+                let supabaseURL = "https://pgezrygzubjieqfzyccy.supabase.co"
+                let redirectURL = "houser://oauth-callback"
+                let authURL = URL(string: "\(supabaseURL)/auth/v1/authorize?provider=\(provider.rawValue.lowercased())&redirect_to=\(redirectURL)")!
+
+                print("🔑 Opening OAuth URL: \(authURL)")
+
+                // Use ASWebAuthenticationSession for in-app authentication
+                await MainActor.run {
+                    let contextProvider = ASWebAuthenticationPresentationContextProvider()
+
+                    let session = ASWebAuthenticationSession(
+                        url: authURL,
+                        callbackURLScheme: "houser"
+                    ) { callbackURL, error in
+                        Task {
+                            if let error = error {
+                                print("❌ OAuth session error: \(error)")
+                                await MainActor.run {
+                                    isLoading = false
+                                    if (error as NSError).code != ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                                        errorMessage = "Failed to sign in with \(provider.rawValue). Please try again."
+                                    } else {
+                                        isLoading = false
+                                    }
+                                }
+                                return
+                            }
+
+                            guard let callbackURL = callbackURL else {
+                                await MainActor.run {
+                                    isLoading = false
+                                    errorMessage = "OAuth authentication failed"
+                                }
+                                return
+                            }
+
+                            // Handle the OAuth callback
+                            print("🔗 OAuth callback received: \(callbackURL)")
+                            DeepLinkManager.shared.handleURL(callbackURL)
+                        }
+                    }
+
+                    // Set presentation context before starting
+                    session.presentationContextProvider = contextProvider
+                    session.prefersEphemeralWebBrowserSession = false
+                    session.start()
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    print("❌ OAuth error: \(error)")
+                    errorMessage = "Failed to sign in with \(provider.rawValue). Please try again."
+                }
+            }
+        }
+    }
+
     func saveTermsAcceptance(userId: UUID) async throws {
         struct TermsData: Encodable {
             let user_id: String
@@ -556,6 +652,19 @@ struct AuthView: View {
 
     func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
+// MARK: - ASWebAuthenticationSession Presentation Context Provider
+
+class ASWebAuthenticationPresentationContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        // Get the first active window scene
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first else {
+            return UIWindow()
+        }
+        return window
     }
 }
 

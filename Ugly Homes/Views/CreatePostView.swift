@@ -862,6 +862,36 @@ struct CreatePostView: View {
                     let coolingType: String?
                     let appliancesIncluded: [String]?
                     let additionalDetails: [String: AnyCodable]?
+
+                    enum CodingKeys: String, CodingKey {
+                        case price
+                        case address
+                        case unit
+                        case city
+                        case state
+                        case zipCode = "zip_code"
+                        case bedrooms
+                        case bathrooms
+                        case description
+                        case images
+                        case listingType = "listing_type"
+                        case schoolDistrict = "school_district"
+                        case elementarySchool = "elementary_school"
+                        case middleSchool = "middle_school"
+                        case highSchool = "high_school"
+                        case schoolRating = "school_rating"
+                        case hoaFee = "hoa_fee"
+                        case lotSizeSqft = "lot_size_sqft"
+                        case livingAreaSqft = "living_area_sqft"
+                        case yearBuilt = "year_built"
+                        case propertyTypeDetail = "property_type_detail"
+                        case parkingSpaces = "parking_spaces"
+                        case stories
+                        case heatingType = "heating_type"
+                        case coolingType = "cooling_type"
+                        case appliancesIncluded = "appliances_included"
+                        case additionalDetails = "additional_details"
+                    }
                 }
 
                 // Log raw JSON response for debugging

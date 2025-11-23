@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "9B6807952EB3BF260038FE88"
-               BuildableName = "Ugly Homes.app"
+               BuildableName = "Houser.app"
                BlueprintName = "Ugly Homes"
                ReferencedContainer = "container:Ugly Homes.xcodeproj">
             </BuildableReference>
@@ -36,7 +36,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "9B6807A22EB3BF2E0038FE88"
-               BuildableName = "Ugly HomesTests.xctest"
+               BuildableName = "Houser.xctest"
                BlueprintName = "Ugly HomesTests"
                ReferencedContainer = "container:Ugly Homes.xcodeproj">
             </BuildableReference>
@@ -47,7 +47,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "9B6807AC2EB3BF2E0038FE88"
-               BuildableName = "Ugly HomesUITests.xctest"
+               BuildableName = "Houser.xctest"
                BlueprintName = "Ugly HomesUITests"
                ReferencedContainer = "container:Ugly Homes.xcodeproj">
             </BuildableReference>
@@ -69,7 +69,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "9B6807952EB3BF260038FE88"
-            BuildableName = "Ugly Homes.app"
+            BuildableName = "Houser.app"
             BlueprintName = "Ugly Homes"
             ReferencedContainer = "container:Ugly Homes.xcodeproj">
          </BuildableReference>
@@ -86,7 +86,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "9B6807952EB3BF260038FE88"
-            BuildableName = "Ugly Homes.app"
+            BuildableName = "Houser.app"
             BlueprintName = "Ugly Homes"
             ReferencedContainer = "container:Ugly Homes.xcodeproj">
          </BuildableReference>

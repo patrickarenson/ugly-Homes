@@ -210,20 +210,12 @@ struct ConversationRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Profile photo
-            if let avatarUrl = conversation.otherAvatarUrl, let url = URL(string: avatarUrl) {
-                AsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 56, height: 56)
-                        .clipShape(Circle())
-                } placeholder: {
-                    defaultAvatar
-                }
-            } else {
-                defaultAvatar
-            }
+            // Profile photo with initial fallback
+            AvatarView(
+                avatarUrl: conversation.otherAvatarUrl,
+                username: conversation.otherUsername,
+                size: 56
+            )
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
@@ -269,17 +261,6 @@ struct ConversationRow: View {
             }
         }
         .padding(.vertical, 8)
-    }
-
-    var defaultAvatar: some View {
-        Circle()
-            .fill(Color.gray.opacity(0.3))
-            .frame(width: 56, height: 56)
-            .overlay(
-                Image(systemName: "person.fill")
-                    .font(.title2)
-                    .foregroundColor(.white)
-            )
     }
 
     func timeAgo(from date: Date) -> String {

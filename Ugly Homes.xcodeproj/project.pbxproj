@@ -40,9 +40,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		9B6807962EB3BF260038FE88 /* Ugly Homes.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Ugly Homes.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		9B6807A32EB3BF2E0038FE88 /* Ugly HomesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Ugly HomesTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		9B6807AD2EB3BF2E0038FE88 /* Ugly HomesUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Ugly HomesUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9B6807962EB3BF260038FE88 /* Houser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Houser.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9B6807A32EB3BF2E0038FE88 /* Ugly HomesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "Ugly HomesTests.xctest"; path = Houser.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		9B6807AD2EB3BF2E0038FE88 /* Ugly HomesUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "Ugly HomesUITests.xctest"; path = Houser.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -114,7 +114,7 @@
 		9B6807972EB3BF260038FE88 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				9B6807962EB3BF260038FE88 /* Ugly Homes.app */,
+				9B6807962EB3BF260038FE88 /* Houser.app */,
 				9B6807A32EB3BF2E0038FE88 /* Ugly HomesTests.xctest */,
 				9B6807AD2EB3BF2E0038FE88 /* Ugly HomesUITests.xctest */,
 			);
@@ -156,7 +156,7 @@
 				9B166E8E2EB552A90076109E /* StripePayments */,
 			);
 			productName = "Ugly Homes";
-			productReference = 9B6807962EB3BF260038FE88 /* Ugly Homes.app */;
+			productReference = 9B6807962EB3BF260038FE88 /* Houser.app */;
 			productType = "com.apple.product-type.application";
 		};
 		9B6807A22EB3BF2E0038FE88 /* Ugly HomesTests */ = {
@@ -443,12 +443,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Ugly Homes/Ugly Homes.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 526B6ZA2G2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Ugly-Homes-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = Housers;
+				INFOPLIST_KEY_CFBundleDisplayName = Houser;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Houser needs access to your camera to take photos of properties you want to post.";
@@ -466,9 +466,9 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.0.3;
+				MARKETING_VERSION = 2.0.5;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.uglyhomes.Ugly-Homes";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Houser;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -486,12 +486,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Ugly Homes/Ugly Homes.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 526B6ZA2G2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Ugly-Homes-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = Housers;
+				INFOPLIST_KEY_CFBundleDisplayName = Houser;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Houser needs access to your camera to take photos of properties you want to post.";
@@ -509,9 +509,9 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.0.3;
+				MARKETING_VERSION = 2.0.5;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.uglyhomes.Ugly-Homes";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Houser;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -533,7 +533,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.uglyhomes.Ugly-HomesTests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Houser;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -552,7 +552,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.uglyhomes.Ugly-HomesTests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Houser;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -569,7 +569,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.uglyhomes.Ugly-HomesUITests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Houser;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -586,7 +586,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.uglyhomes.Ugly-HomesUITests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Houser;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

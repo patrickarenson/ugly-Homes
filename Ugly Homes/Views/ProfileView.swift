@@ -40,36 +40,12 @@ struct ProfileView: View {
                 if let profile = profile {
                     // Profile header
                     VStack(spacing: 12) {
-                        // Profile photo
-                        if let avatarUrl = profile.avatarUrl, !avatarUrl.isEmpty, let baseUrl = URL(string: avatarUrl) {
-                            // Add timestamp to force image reload
-                            AsyncImage(url: URL(string: "\(avatarUrl)?t=\(Date().timeIntervalSince1970)") ?? baseUrl) { image in
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 80, height: 80)
-                                    .clipShape(Circle())
-                            } placeholder: {
-                                Circle()
-                                    .fill(Color.gray.opacity(0.3))
-                                    .frame(width: 80, height: 80)
-                                    .overlay(
-                                        Image(systemName: "person.fill")
-                                            .font(.largeTitle)
-                                            .foregroundColor(.white)
-                                    )
-                            }
-                            .id(avatarUrl) // Force SwiftUI to recreate the view when URL changes
-                        } else {
-                            Circle()
-                                .fill(Color.gray.opacity(0.3))
-                                .frame(width: 80, height: 80)
-                                .overlay(
-                                    Image(systemName: "person.fill")
-                                        .font(.largeTitle)
-                                        .foregroundColor(.white)
-                                )
-                        }
+                        // Profile photo with initial fallback
+                        AvatarView(
+                            avatarUrl: profile.avatarUrl,
+                            username: profile.username,
+                            size: 80
+                        )
 
                         HStack(spacing: 6) {
                             Text("@\(profile.username)")
@@ -92,12 +68,38 @@ struct ProfileView: View {
                             }
                         }
 
-                        if let bio = profile.bio {
+                        if let bio = profile.bio, !bio.isEmpty {
                             Text(bio)
                                 .font(.subheadline)
                                 .foregroundColor(.primary.opacity(0.8))
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal)
+                        }
+
+                        // Show "Complete Your Profile" button if viewing own profile and missing bio/location
+                        if !isViewingOtherProfile {
+                            let hasBio = profile.bio != nil && !profile.bio!.isEmpty
+                            let hasLocation = profile.market != nil && !profile.market!.isEmpty
+
+                            if !hasBio || !hasLocation {
+                                Button(action: {
+                                    showEditProfile = true
+                                }) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "pencil.circle.fill")
+                                            .font(.subheadline)
+                                        Text("Complete Your Profile")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                    }
+                                    .foregroundColor(.blue)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(Color.blue.opacity(0.1))
+                                    .cornerRadius(20)
+                                }
+                                .padding(.top, 4)
+                            }
                         }
 
                         // Message button - COMMENTED OUT for App Store submission
@@ -311,16 +313,74 @@ struct ProfileView: View {
                         }
                     } else {
                         // User's posts grid
-                        if userHomes.isEmpty {
-                            VStack(spacing: 20) {
-                                Image(systemName: "house")
+                        if userHomes.isEmpty && !isLoading {
+                            VStack(spacing: 24) {
+                                // Welcome icon
+                                Image(systemName: "hand.wave.fill")
                                     .font(.system(size: 60))
-                                    .foregroundColor(.gray)
-                                Text("No posts yet")
-                                    .font(.title3)
-                                    .foregroundColor(.gray)
+                                    .foregroundColor(Color(red: 1.0, green: 0.65, blue: 0.3))
+
+                                // Welcome message
+                                VStack(spacing: 8) {
+                                    Text("Welcome to Houser!")
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+
+                                    Text("Your profile is ready - now it's time to share properties you love")
+                                        .font(.body)
+                                        .foregroundColor(.gray)
+                                        .multilineTextAlignment(.center)
+                                        .padding(.horizontal, 40)
+                                }
+
+                                // Feature bullets
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "link.circle.fill")
+                                            .foregroundColor(Color(red: 1.0, green: 0.65, blue: 0.3))
+                                        Text("Import listings from Zillow")
+                                            .font(.subheadline)
+                                    }
+
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "house.circle.fill")
+                                            .foregroundColor(Color(red: 1.0, green: 0.65, blue: 0.3))
+                                        Text("Share homes you're watching")
+                                            .font(.subheadline)
+                                    }
+
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "chart.line.uptrend.xyaxis.circle.fill")
+                                            .foregroundColor(Color(red: 1.0, green: 0.65, blue: 0.3))
+                                        Text("Share your home renovation projects")
+                                            .font(.subheadline)
+                                    }
+                                }
+                                .padding(.horizontal, 40)
+
+                                // CTA Button
+                                NavigationLink(destination: CreatePostView()) {
+                                    Text("Add Your First Property")
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(
+                                            LinearGradient(
+                                                gradient: Gradient(colors: [
+                                                    Color(red: 1.0, green: 0.65, blue: 0.3),
+                                                    Color(red: 1.0, green: 0.45, blue: 0.2)
+                                                ]),
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                        .cornerRadius(12)
+                                        .shadow(color: Color(red: 1.0, green: 0.65, blue: 0.3).opacity(0.3), radius: 10, x: 0, y: 5)
+                                }
+                                .padding(.horizontal, 40)
                             }
-                            .padding(.top, 60)
+                            .padding(.top, 40)
                         } else {
                             LazyVGrid(columns: [
                                 GridItem(.flexible()),
@@ -577,12 +637,12 @@ struct ProfileView: View {
                     .execute()
                     .value
 
-                // Update UI immediately with profile data
+                // Update UI with profile data
                 await MainActor.run {
                     if let userProfile = profileResponse.first {
                         profile = userProfile
                     }
-                    isLoading = false // Show UI immediately, posts will load below
+                    // Keep loading state until homes are loaded too
                 }
 
                 // Load user's homes in background (need to include profile for HomePostView)
@@ -596,6 +656,7 @@ struct ProfileView: View {
 
                 await MainActor.run {
                     userHomes = homesResponse
+                    isLoading = false // Only set to false after both profile AND homes are loaded
                     print("✅ Loaded profile with \(userHomes.count) posts")
                 }
             } catch {

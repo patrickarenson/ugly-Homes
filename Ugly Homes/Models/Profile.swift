@@ -14,7 +14,9 @@ struct Profile: Codable, Identifiable, Hashable {
     var avatarUrl: String?
     var bio: String?
     var market: String?
+    var userTypes: [String]?
     var isVerified: Bool?
+    var hasCompletedOnboarding: Bool?
     var createdAt: Date?
     var updatedAt: Date?
 
@@ -25,7 +27,9 @@ struct Profile: Codable, Identifiable, Hashable {
         case avatarUrl = "avatar_url"
         case bio
         case market
+        case userTypes = "user_types"
         case isVerified = "is_verified"
+        case hasCompletedOnboarding = "has_completed_onboarding"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }

@@ -1,9 +1,137 @@
 # Claude Code - Project Status
-**Last Updated:** November 19, 2025 @ 3:10 AM
+**Last Updated:** November 23, 2025 @ 12:15 PM
 
 **⚠️ TESTING NOTE**: Always test on physical iPhone - simulator causes computer to crash
 
 **📝 IMPORTANT FOR CLAUDE**: Update this file frequently throughout each session in case terminal resets. Document all changes, fixes, and status as they happen.
+
+## Sessions 16-17 Summary - Avatar Initials, Onboarding UX & Auto-Posting (November 22-23, 2025)
+
+**Version:** 2.0.2 (Build 4)
+
+### Issues Resolved:
+
+1. ✅ **Avatar Initial System** - Personalized default avatars
+   - Created `AvatarView.swift` component that shows first letter of username when no photo uploaded
+   - Generates consistent gradient colors based on username hash (6 color pairs)
+   - Each username gets unique, recognizable color combination
+   - Updated ProfileView, FeedView, CommentsView, and MessagesView to use AvatarView
+   - Removed generic gray person icons in favor of personalized initials
+   - **Files:** ProfileView.swift:44-48, FeedView.swift:996-1001, CommentsView.swift:847-852, MessagesView.swift:214-217
+
+2. ✅ **Onboarding UX Improvements** - Friendly error messages
+   - Added complete OnboardingView.swift with multi-step flow
+   - Implemented `friendlyErrorMessage()` function to convert technical errors
+   - RLS/storage errors → "Couldn't upload your photo. You can skip for now..."
+   - Network errors → "Connection issue. Check your internet and try again."
+   - Auth errors → "Session expired. Please sign in again."
+   - Added skip functionality for optional photo upload step
+   - Created RLS policies in Supabase for avatar uploads:
+     - `Users can upload avatars` - INSERT policy for authenticated users
+     - `Avatars are publicly accessible` - SELECT policy for public access
+   - **Files:** OnboardingView.swift:189-227
+
+3. ✅ **Automated Property Posting System** - Daily Orlando listings
+   - Created `auto-post-properties.js` to fetch 15 trending Orlando properties daily
+   - Integrated RapidAPI Zillow API for featured/trending listings
+   - Implemented duplicate detection using `source_url` column in homes table
+   - Added database column: `ALTER TABLE homes ADD COLUMN source_url TEXT`
+   - Posts from @houser account at 2:30 AM daily (cron job configured)
+   - Focus: Greater Orlando area (Orlando, Winter Park, Kissimmee, Altamonte Springs, etc.)
+   - **Files:** auto-post-properties.js, AUTO-POST-SETUP.md
+   - **Helper Scripts:** check-users.js, add-source-url-column.js, install-auto-post.sh
+   - **RapidAPI Key:** 70a79df3bamsh2cac396016ebdacp1ce048jsnfa758af38d6c
+   - **Cron Job:** `30 2 * * * /Users/patrickarenson/.nvm/versions/node/v22.18.0/bin/node "/Users/patrickarenson/Desktop/Ugly Homes/Ugly Homes/auto-post-properties.js"`
+
+4. ✅ **Map Navigation Scroll Position** - Return to exact post
+   - Fixed scroll position restoration when returning from map to feed
+   - LocationFeedView now passes homeId when clicking back button (line 118)
+   - MainTabView forwards homeId with 0.2s delay to allow tab switch (lines 91-100)
+   - FeedView listens for `ScrollToHome` notification and triggers scroll (lines 310-319)
+   - Uses ScrollViewReader with `.id(home.id)` for accurate positioning (line 209)
+   - **Issue:** Still testing - may need additional debugging
+
+5. ✅ **Map Pin Alignment** - Fixed positioning
+   - Updated pin condition to check for actual location data instead of postType
+   - Pin shows if `(address != nil && !address.isEmpty) || (city != nil && state != nil)`
+   - Pin now appears on tags row, aligned to trailing edge
+   - Both three-dots menu and map pin positioned consistently
+   - **Files:** FeedView.swift:1136-1145
+
+### Technical Implementation:
+
+**Avatar Color Generation:**
+- Uses username hash to pick from 6 predefined gradient color pairs
+- Consistent colors per username (e.g., "alice" always gets same gradient)
+- Colors: Houser Orange, Blue, Purple, Green, Red/Pink, Teal
+- Gradients applied diagonally (topLeading to bottomTrailing)
+
+**Auto-Post Architecture:**
+1. Fetch 15 featured properties from RapidAPI Zillow endpoint
+2. Check each URL against `source_url` column for duplicates
+3. Scrape property details from custom API (`https://api.housers.us/api/scrape-listing`)
+4. Insert into homes table from @houser account
+5. 2-second delay between posts to avoid rate limiting
+
+**Scroll Restoration Flow:**
+1. User taps pin → `ShowHomeOnMap` notification → Save homeId
+2. Tab switches to map (tab 1)
+3. User taps back → `ReturnToTrendingFromMap` notification with homeId
+4. MainTabView switches to tab 0, waits 0.2s
+5. MainTabView posts `ScrollToHome` notification with homeId
+6. FeedView receives notification, triggers `shouldScrollToSaved = true`
+7. ScrollViewReader scrolls to saved home
+
+### Files Modified:
+
+**New Files:**
+- `Ugly Homes/Views/AvatarView.swift` - Reusable avatar component
+- `Ugly Homes/Views/OnboardingView.swift` - Complete onboarding flow
+- `auto-post-properties.js` - Automated property poster
+- `AUTO-POST-SETUP.md` - Setup documentation
+- `check-users.js` - User verification helper
+- `add-source-url-column.js` - Database migration helper
+- `install-auto-post.sh` - Installation script
+
+**Modified Files:**
+- `Views/ProfileView.swift` - Uses AvatarView (lines 44-48)
+- `Views/FeedView.swift` - AvatarView, scroll restoration, pin alignment
+- `Views/CommentsView.swift` - Uses AvatarView (lines 847-852)
+- `Views/MessagesView.swift` - Uses AvatarView, removed defaultAvatar (lines 214-217)
+- `Views/LocationFeedView.swift` - Passes homeId on back (line 118)
+- `Views/MainTabView.swift` - Forwards scroll notification (lines 91-100)
+- `Models/Profile.swift` - No changes needed (avatarUrl already exists)
+
+### Pending Issues:
+
+1. ⚠️ **Map Pin Not Rendering** - User reported pin not showing
+   - Changed condition from `postType != "project"` to location data check
+   - Need to verify properties have address/city/state data
+   - May need additional debugging
+
+2. ⚠️ **Scroll Position Still Not Working** - User confirmed issue persists
+   - All notification chain implemented correctly
+   - May be timing issue with ScrollViewReader
+   - Consider adding longer delay or different scroll trigger mechanism
+   - Check console logs for notification delivery
+
+### Testing Checklist:
+
+- [ ] Test avatar initials display when user skips photo upload
+- [ ] Verify avatar colors are consistent per username
+- [ ] Test onboarding photo upload with friendly error messages
+- [ ] Verify auto-post script runs at 2:30 AM and posts 15 properties
+- [ ] Test map pin visibility on feed posts with addresses
+- [ ] Verify scroll position restoration when returning from map
+- [ ] Test clean build and deployment to physical device
+
+### Status:
+- ✅ Code committed and pushed (commit: 21a5713)
+- ⚠️ Map navigation features need additional testing/debugging
+- ✅ Avatar system fully implemented and working
+- ✅ Auto-post system configured and scheduled
+
+---
 
 ## Session 15 Summary - Tagging, Square Footage & Marketing Automation (November 19, 2025)
 

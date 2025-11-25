@@ -17,6 +17,8 @@ struct Profile: Codable, Identifiable, Hashable {
     var userTypes: [String]?
     var isVerified: Bool?
     var hasCompletedOnboarding: Bool?
+    var followersCount: Int?
+    var followingCount: Int?
     var createdAt: Date?
     var updatedAt: Date?
 
@@ -30,6 +32,8 @@ struct Profile: Codable, Identifiable, Hashable {
         case userTypes = "user_types"
         case isVerified = "is_verified"
         case hasCompletedOnboarding = "has_completed_onboarding"
+        case followersCount = "followers_count"
+        case followingCount = "following_count"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }

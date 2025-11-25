@@ -22,6 +22,7 @@ struct ProfileView: View {
     @State private var showBlockAlert = false
     @State private var showBlockConfirmation = false
     @State private var showShareSheet = false
+    @State private var isFollowing = false
 
     init(viewingUserId: UUID? = nil) {
         self.viewingUserId = viewingUserId
@@ -102,97 +103,32 @@ struct ProfileView: View {
                             }
                         }
 
-                        // Message button - COMMENTED OUT for App Store submission
-                        // TODO: Re-enable once fully tested
-//                        if isViewingOtherProfile {
-//                            Button(action: {
-//                                print("🔵 Message button tapped for: \(profile.username)")
-//                                showChat = true
-//                                print("🔵 showChat = \(showChat)")
-//                            }) {
-//                                HStack {
-//                                    Image(systemName: "message.fill")
-//                                    Text("Message")
-//                                        .fontWeight(.semibold)
-//                                }
-//                                .foregroundColor(.white)
-//                                .frame(maxWidth: .infinity)
-//                                .padding(.vertical, 10)
-//                                .background(Color.blue)
-//                                .cornerRadius(8)
-//                            }
-//                            .padding(.horizontal, 40)
-//                            .padding(.top, 8)
-//                        }
+                        // Follow/Unfollow button
+                        if isViewingOtherProfile {
+                            Button(action: {
+                                toggleFollow()
+                            }) {
+                                HStack {
+                                    Image(systemName: isFollowing ? "person.fill.checkmark" : "person.fill.badge.plus")
+                                    Text(isFollowing ? "Following" : "Follow")
+                                        .fontWeight(.semibold)
+                                }
+                                .foregroundColor(isFollowing ? .gray : .white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(isFollowing ? Color.gray.opacity(0.2) : Color.orange)
+                                .cornerRadius(8)
+                            }
+                            .padding(.horizontal, 40)
+                            .padding(.top, 8)
+                        }
                     }
                     .padding(.top)
 
                     // Stats - Modern, compact single row
-                    HStack(spacing: 0) {
-                        VStack(spacing: 3) {
-                            Text("\(userHomes.count)")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(.primary)
-                            Text("Posts")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-
-                        VStack(spacing: 3) {
-                            Text("\(userHomes.filter { $0.soldStatus == "sold" }.count)")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(.primary)
-                            Text("Sold")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-
-                        VStack(spacing: 3) {
-                            Text("\(userHomes.filter { $0.soldStatus == "leased" }.count)")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(.primary)
-                            Text("Leased")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-
-                        // COMMENTED OUT: Ranking feature
-                        // Replaced with Bookmarks
-                        /*
-                        VStack(spacing: 3) {
-                            Text(calculateRanking(homes: userHomes).text)
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(calculateRanking(homes: userHomes).color)
-                            Text("Rank")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        */
-
-                        // Dynamic toggle button - Shows bookmark when on posts, shows grid when on bookmarks
-                        Button(action: {
-                            showingBookmarks.toggle()
-                            if showingBookmarks {
-                                loadBookmarks()
-                            }
-                        }) {
-                            VStack(spacing: 3) {
-                                Image(systemName: showingBookmarks ? "square.grid.3x3.fill" : "bookmark.fill")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(showingBookmarks ? .gray : .gray)
-                                Text(showingBookmarks ? "Posts" : "Saved")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
+                    profileStatsView
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
 
                     Divider()
 
@@ -616,6 +552,45 @@ struct ProfileView: View {
         }
     }
 
+    // Helper view to fix compiler type-checking timeout
+    var profileStatsView: some View {
+        HStack(spacing: 0) {
+            statItem(count: userHomes.count, label: "Posts")
+            statItem(count: profile?.followersCount ?? 0, label: "Followers")
+            statItem(count: profile?.followingCount ?? 0, label: "Following")
+
+            // Bookmark toggle button
+            Button(action: {
+                showingBookmarks.toggle()
+                if showingBookmarks {
+                    loadBookmarks()
+                }
+            }) {
+                VStack(spacing: 3) {
+                    Image(systemName: showingBookmarks ? "square.grid.3x3.fill" : "bookmark.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.gray)
+                    Text(showingBookmarks ? "Posts" : "Saved")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    func statItem(count: Int, label: String) -> some View {
+        VStack(spacing: 3) {
+            Text("\(count)")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(.primary)
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     func loadProfile() {
         isLoading = true
 
@@ -658,6 +633,11 @@ struct ProfileView: View {
                     userHomes = homesResponse
                     isLoading = false // Only set to false after both profile AND homes are loaded
                     print("✅ Loaded profile with \(userHomes.count) posts")
+                }
+
+                // Check follow status if viewing another user's profile
+                if isViewingOtherProfile {
+                    checkFollowStatus()
                 }
             } catch {
                 print("❌ Error loading profile: \(error)")
@@ -718,6 +698,81 @@ struct ProfileView: View {
                 Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshFeed"), object: nil)
             } catch {
                 print("❌ Error blocking user: \(error)")
+            }
+        }
+    }
+
+    func toggleFollow() {
+        guard let profile = profile, let currentUserId = currentUserId else {
+            print("❌ Cannot toggle follow - missing profile or current user ID")
+            return
+        }
+
+        Task {
+            do {
+                if isFollowing {
+                    // Unfollow
+                    print("🔄 Unfollowing @\(profile.username)")
+                    try await SupabaseManager.shared.client
+                        .from("follows")
+                        .delete()
+                        .eq("follower_id", value: currentUserId.uuidString)
+                        .eq("following_id", value: profile.id.uuidString)
+                        .execute()
+                    print("✅ Unfollowed @\(profile.username)")
+                } else {
+                    // Follow
+                    print("🔄 Following @\(profile.username)")
+                    struct FollowData: Encodable {
+                        let follower_id: String
+                        let following_id: String
+                    }
+
+                    try await SupabaseManager.shared.client
+                        .from("follows")
+                        .insert(FollowData(
+                            follower_id: currentUserId.uuidString,
+                            following_id: profile.id.uuidString
+                        ))
+                        .execute()
+                    print("✅ Followed @\(profile.username)")
+                }
+
+                await MainActor.run {
+                    isFollowing.toggle()
+                }
+
+                // Refresh profile to update follower counts
+                loadProfile()
+            } catch {
+                print("❌ Error toggling follow: \(error)")
+            }
+        }
+    }
+
+    func checkFollowStatus() {
+        guard let profile = profile, let currentUserId = currentUserId else { return }
+
+        Task {
+            do {
+                struct Follow: Decodable {
+                    let id: UUID
+                }
+
+                let response: [Follow] = try await SupabaseManager.shared.client
+                    .from("follows")
+                    .select()
+                    .eq("follower_id", value: currentUserId.uuidString)
+                    .eq("following_id", value: profile.id.uuidString)
+                    .execute()
+                    .value
+
+                await MainActor.run {
+                    isFollowing = !response.isEmpty
+                    print("🔍 Follow status for @\(profile.username): \(isFollowing ? "Following" : "Not following")")
+                }
+            } catch {
+                print("❌ Error checking follow status: \(error)")
             }
         }
     }

@@ -300,6 +300,8 @@ struct NotificationRowContent: View {
             return "heart.fill"
         case "comment":
             return "bubble.left.fill"
+        case "follow":
+            return "person.fill.badge.plus"
         case "open_house_cancelled":
             return "calendar.badge.exclamationmark"
         default:
@@ -313,6 +315,8 @@ struct NotificationRowContent: View {
             return .pink
         case "comment":
             return .blue
+        case "follow":
+            return .purple
         case "open_house_cancelled":
             return .red
         default:

@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import Auth
 
 class DeepLinkManager: ObservableObject {
     static let shared = DeepLinkManager()
@@ -39,33 +40,59 @@ class DeepLinkManager: ObservableObject {
         // Check if this is an OAuth callback
         if url.host == "oauth-callback" || url.path.contains("oauth-callback") {
             print("🔑 OAuth callback detected, handling session")
+            print("🔑 Full OAuth URL: \(url.absoluteString)")
             Task {
                 do {
-                    // Parse tokens from URL fragment (implicit flow)
-                    let fragment = url.fragment ?? ""
-                    let params = fragment.components(separatedBy: "&").reduce(into: [String: String]()) { result, param in
-                        let parts = param.components(separatedBy: "=")
-                        if parts.count == 2 {
-                            result[parts[0]] = parts[1]
+                    // Parse tokens from URL fragment (Implicit Flow)
+                    // URL format: houser://oauth-callback#access_token=...&refresh_token=...
+                    let session: Session
+
+                    if let fragment = url.fragment, fragment.contains("access_token") {
+                        // Implicit Flow - tokens in fragment
+                        print("🔑 Parsing tokens from URL fragment (Implicit Flow)")
+                        let params = fragment.components(separatedBy: "&")
+                            .reduce(into: [String: String]()) { (dict: inout [String: String], param: String) in
+                                let parts = param.components(separatedBy: "=")
+                                if parts.count == 2 {
+                                    dict[parts[0]] = parts[1]
+                                }
+                            }
+
+                        guard let accessToken = params["access_token"],
+                              let refreshToken = params["refresh_token"] else {
+                            throw NSError(domain: "OAuth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing tokens in callback"])
                         }
-                    }
 
-                    guard let accessToken = params["access_token"],
-                          let refreshToken = params["refresh_token"] else {
-                        print("❌ Missing tokens in OAuth callback")
-                        return
+                        print("✅ Tokens extracted, setting session...")
+                        session = try await SupabaseManager.shared.client.auth.setSession(
+                            accessToken: accessToken,
+                            refreshToken: refreshToken
+                        )
+                    } else {
+                        // PKCE Flow - code in query parameters
+                        print("🔑 Using PKCE flow")
+                        session = try await SupabaseManager.shared.client.auth.session(from: url)
                     }
-
-                    // Set the session with the tokens
-                    try await SupabaseManager.shared.client.auth.setSession(accessToken: accessToken, refreshToken: refreshToken)
                     print("✅ OAuth session established successfully")
+                    print("✅ User ID: \(session.user.id)")
 
-                    // Get the session to create profile if needed
-                    let session = try await SupabaseManager.shared.client.auth.session
+                    // Detect provider type
+                    let provider = session.user.appMetadata["provider"]?.stringValue ?? "unknown"
+                    print("🔑 OAuth Provider: \(provider)")
 
                     // For OAuth users, create username from email or provider data
                     let email = session.user.email ?? ""
-                    let defaultUsername = email.components(separatedBy: "@").first?.lowercased() ?? "user\(session.user.id.uuidString.prefix(8))"
+                    var defaultUsername: String
+
+                    if !email.isEmpty {
+                        // Use email prefix if available
+                        defaultUsername = email.components(separatedBy: "@").first?.lowercased() ?? "user\(session.user.id.uuidString.prefix(8))"
+                    } else {
+                        // Apple users can hide email - use provider + unique ID
+                        defaultUsername = "\(provider)user\(session.user.id.uuidString.prefix(8))".lowercased()
+                    }
+
+                    print("🏷️ Generated username: \(defaultUsername)")
 
                     // Check if profile exists, if not create one
                     let profiles: [Profile] = try await SupabaseManager.shared.client
@@ -84,10 +111,38 @@ class DeepLinkManager: ObservableObject {
                             let full_name: String?
                         }
 
+                        // Extract full_name from userMetadata if available
+                        // Apple and Google may provide name differently
+                        var fullName: String? = nil
+
+                        // Try full_name first (Google)
+                        if case .string(let name) = session.user.userMetadata["full_name"] {
+                            fullName = name
+                        }
+                        // Try name field (Apple)
+                        else if case .string(let name) = session.user.userMetadata["name"] {
+                            fullName = name
+                        }
+                        // Try combining first + last name (Apple can provide these separately)
+                        else {
+                            var nameParts: [String] = []
+                            if case .string(let firstName) = session.user.userMetadata["first_name"] {
+                                nameParts.append(firstName)
+                            }
+                            if case .string(let lastName) = session.user.userMetadata["last_name"] {
+                                nameParts.append(lastName)
+                            }
+                            if !nameParts.isEmpty {
+                                fullName = nameParts.joined(separator: " ")
+                            }
+                        }
+
+                        print("👤 Full name: \(fullName ?? "not provided")")
+
                         let newProfile = NewProfile(
                             id: session.user.id.uuidString,
                             username: defaultUsername,
-                            full_name: session.user.userMetadata["full_name"] as? String
+                            full_name: fullName
                         )
 
                         try await SupabaseManager.shared.client

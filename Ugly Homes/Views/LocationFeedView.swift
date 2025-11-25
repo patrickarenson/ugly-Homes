@@ -25,6 +25,7 @@ struct LocationFeedView: View {
     @State private var highlightedHomeId: UUID? = nil
     @State private var isLoadingHighlightedHome = false
     @State private var lastViewedOpenHouseCount = UserDefaults.standard.integer(forKey: "lastViewedOpenHouseCount")
+    @State private var savedScrollHomeId: UUID? = nil // Saved for scroll position restoration
 
     let usStates = ["All", "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
                     "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA",
@@ -109,13 +110,14 @@ struct LocationFeedView: View {
                 // Header bar (search bar only shows in list view)
                 HStack(spacing: 12) {
                     // Back button - only show when on map with highlighted property
-                    if showMapView && highlightedHomeId != nil {
+                    if showMapView && savedScrollHomeId != nil {
                         Button(action: {
-                            // Post notification to switch back to trending tab with homeId
+                            // Post notification to switch back to trending tab with SAVED homeId
+                            print("🔙 Back button clicked, sending homeId: \(savedScrollHomeId?.uuidString ?? "nil")")
                             NotificationCenter.default.post(
                                 name: NSNotification.Name("ReturnToTrendingFromMap"),
                                 object: nil,
-                                userInfo: ["homeId": highlightedHomeId as Any]
+                                userInfo: ["homeId": savedScrollHomeId as Any]
                             )
                         }) {
                             HStack(spacing: 4) {
@@ -368,6 +370,7 @@ struct LocationFeedView: View {
                 if let homeId = notification.userInfo?["homeId"] as? UUID {
                     print("🗺️ LocationFeedView received ShowHomeOnMap for: \(homeId)")
                     highlightedHomeId = homeId
+                    savedScrollHomeId = homeId // Save for scroll position restoration
                     showMapView = true // Ensure map is showing
 
                     // Always show loading initially
@@ -386,14 +389,22 @@ struct LocationFeedView: View {
                         print("🔄 Homes not loaded yet, loading now...")
                         loadHomesAndZoom(to: homeId)
                     } else {
-                        // Homes already loaded, but we still need to wait for geocoding/positioning
-                        print("🗺️ Homes already loaded, waiting for geocoding...")
+                        // Check if the highlighted home is in the homes array
+                        if !homes.contains(where: { $0.id == homeId }) {
+                            print("⚠️ Highlighted home not in homes array (may be filtered out), loading it...")
+                            loadAndAddHighlightedHome(homeId)
+                        } else {
+                            print("✅ Highlighted home found in homes array")
+                            // PropertyMapView will automatically geocode and update region via its onChange modifiers
+                            isLoadingHighlightedHome = false
+                        }
                     }
                 }
             }
             .onReceive(Foundation.NotificationCenter.default.publisher(for: Foundation.Notification.Name("ClearMapHighlight"))) { _ in
                 print("🗺️ Clearing map highlight")
                 highlightedHomeId = nil
+                savedScrollHomeId = nil
                 isLoadingHighlightedHome = false
             }
         }
@@ -417,18 +428,26 @@ struct LocationFeedView: View {
                 }
 
                 let response: [Home] = try await query
-                    .order("state", ascending: true)
-                    .order("city", ascending: true)
-                    .limit(50)  // Increased limit since we'll filter out sold/leased
+                    .order("created_at", ascending: false)  // Show newest properties first
+                    .limit(100)  // Increased limit to show more properties across all states
                     .execute()
                     .value
 
                 // Filter out sold/leased properties and projects from map view
                 // Projects are design inspiration, not real estate listings
-                let activeListings = response.filter { home in
+                var activeListings = response.filter { home in
                     let isNotSoldOrLeased = home.soldStatus == nil || (home.soldStatus != "sold" && home.soldStatus != "leased")
                     let isNotProject = home.postType != "project"
                     return isNotSoldOrLeased && isNotProject
+                }
+
+                // IMPORTANT: Preserve highlighted home if it exists (don't remove it when refreshing)
+                if let highlightedId = highlightedHomeId,
+                   let existingHighlightedHome = homes.first(where: { $0.id == highlightedId }),
+                   !activeListings.contains(where: { $0.id == highlightedId }) {
+                    // Add highlighted home back to the beginning
+                    activeListings.insert(existingHighlightedHome, at: 0)
+                    print("🎯 Preserved highlighted home in homes array after refresh")
                 }
 
                 print("✅ Loaded \(response.count) homes, showing \(activeListings.count) active listings (filtered out sold/leased/projects)")
@@ -591,6 +610,43 @@ struct LocationFeedView: View {
                 print("❌ Error loading homes: \(error)")
                 await MainActor.run {
                     isLoading = false
+                    isLoadingHighlightedHome = false
+                }
+            }
+        }
+    }
+
+    func loadAndAddHighlightedHome(_ homeId: UUID) {
+        Task {
+            do {
+                print("📥 Loading highlighted home to add to map...")
+
+                // Load the specific home we want to highlight
+                let response: [Home] = try await SupabaseManager.shared.client
+                    .from("homes")
+                    .select("*, profile:user_id(*)")
+                    .eq("id", value: homeId.uuidString)
+                    .execute()
+                    .value
+
+                if let highlightedHome = response.first {
+                    await MainActor.run {
+                        print("✅ Loaded highlighted home, adding to map")
+                        // Add to the beginning of the homes array
+                        homes.insert(highlightedHome, at: 0)
+                        allHomes = homes
+                        // PropertyMapView will automatically geocode and update region when homes.count changes
+                        isLoadingHighlightedHome = false
+                    }
+                } else {
+                    print("❌ Highlighted home not found in database")
+                    await MainActor.run {
+                        isLoadingHighlightedHome = false
+                    }
+                }
+            } catch {
+                print("❌ Error loading highlighted home: \(error)")
+                await MainActor.run {
                     isLoadingHighlightedHome = false
                 }
             }

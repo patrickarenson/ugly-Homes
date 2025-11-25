@@ -100,10 +100,63 @@ async function scrapeProperty(zillowUrl) {
 }
 
 /**
+ * Generate hashtags for a property (similar to iOS TagGenerator)
+ */
+function generateTags(city, price, bedrooms, title, description) {
+  const tags = [];
+
+  // 1. City tag
+  if (city) {
+    const cleanCity = city.replace(/[^a-zA-Z]/g, '');
+    tags.push(`#${cleanCity}`);
+  }
+
+  // 2. Price range tags
+  if (price) {
+    if (price < 200000) tags.push('#Under200K');
+    else if (price < 300000) tags.push('#Under300K');
+    else if (price < 500000) tags.push('#Under500K');
+    else if (price < 750000) tags.push('#Under750K');
+    else if (price < 1000000) tags.push('#Under1M');
+    else tags.push('#LuxuryHomes');
+  }
+
+  // 3. Bedroom count tags
+  if (bedrooms) {
+    if (bedrooms >= 1) tags.push(`#${bedrooms}Bed`);
+    if (bedrooms >= 4) tags.push('#FamilyHome');
+  }
+
+  // 4. Feature tags from title/description
+  const combinedText = `${title || ''} ${description || ''}`.toLowerCase();
+
+  if (combinedText.includes('pool')) tags.push('#Pool');
+  if (combinedText.includes('waterfront') || combinedText.includes('lake') || combinedText.includes('water view')) tags.push('#Waterfront');
+  if (combinedText.includes('golf')) tags.push('#GolfCourse');
+  if (combinedText.includes('gated')) tags.push('#GatedCommunity');
+  if (combinedText.includes('new construction') || combinedText.includes('newly built')) tags.push('#NewConstruction');
+  if (combinedText.includes('updated') || combinedText.includes('renovated') || combinedText.includes('remodeled')) tags.push('#Updated');
+  if (combinedText.includes('fixer') || combinedText.includes('needs work') || combinedText.includes('tlc')) tags.push('#FixerUpper');
+
+  // Deduplicate and limit to 8 tags
+  return [...new Set(tags)].slice(0, 8);
+}
+
+/**
  * Post property to Supabase
  */
 async function postProperty(houserUserId, propertyData, zillowUrl) {
   console.log(`📤 Posting property: ${propertyData.address || 'Unknown'}`);
+
+  // Generate tags for the property
+  const generatedTags = generateTags(
+    propertyData.city,
+    propertyData.price ? parseFloat(propertyData.price.replace(/[^0-9.]/g, '')) : null,
+    propertyData.bedrooms,
+    propertyData.address,
+    propertyData.description
+  );
+  console.log(`🏷️ Generated tags: ${generatedTags.join(', ')}`);
 
   // Map scraped data to your database schema
   const homeData = {
@@ -120,7 +173,10 @@ async function postProperty(houserUserId, propertyData, zillowUrl) {
     description: propertyData.description,
     image_urls: propertyData.images || [],
     post_type: 'listing',
+    listing_type: 'sale',
     source_url: zillowUrl,
+    tags: generatedTags,
+    is_active: true,
 
     // Additional details
     school_district: propertyData.schoolDistrict,
@@ -137,11 +193,13 @@ async function postProperty(houserUserId, propertyData, zillowUrl) {
     stories: propertyData.stories,
     heating_type: propertyData.heatingType,
     cooling_type: propertyData.coolingType,
-    appliances_included: propertyData.appliancesIncluded,
-
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
+    appliances_included: propertyData.appliancesIncluded
   };
+
+  // Log if square footage is missing
+  if (!homeData.living_area_sqft) {
+    console.log(`⚠️ Warning: No square footage data for ${propertyData.address}`);
+  }
 
   const { data, error } = await supabase
     .from('homes')
@@ -154,6 +212,34 @@ async function postProperty(houserUserId, propertyData, zillowUrl) {
   }
 
   console.log(`✅ Posted property ID: ${data.id}`);
+
+  // Create the first comment with the full description (if description exists)
+  if (propertyData.description) {
+    try {
+      console.log(`💬 Creating description comment...`);
+      const { error: commentError } = await supabase
+        .from('comments')
+        .insert({
+          home_id: data.id,
+          user_id: houserUserId,
+          comment_text: propertyData.description
+        });
+
+      if (commentError) {
+        console.error(`⚠️ Failed to create description comment: ${commentError.message}`);
+      } else {
+        // Update comments_count on the home
+        await supabase
+          .from('homes')
+          .update({ comments_count: 1 })
+          .eq('id', data.id);
+        console.log(`✅ Created description comment`);
+      }
+    } catch (commentErr) {
+      console.error(`⚠️ Error creating description comment: ${commentErr.message}`);
+    }
+  }
+
   return data;
 }
 

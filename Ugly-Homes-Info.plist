@@ -34,6 +34,16 @@
 				<string>houser</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.uglyhomes.Ugly-Homes</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>houser</string>
+			</array>
+		</dict>
 	</array>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>

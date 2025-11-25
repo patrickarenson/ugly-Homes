@@ -12,15 +12,24 @@ struct AvatarView: View {
         if let avatarUrl = avatarUrl, !avatarUrl.isEmpty, let url = URL(string: avatarUrl) {
             // Display uploaded photo with cache-busting timestamp
             let urlWithCache = URL(string: "\(avatarUrl)?t=\(Date().timeIntervalSince1970)")
-            AsyncImage(url: urlWithCache ?? url) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: size, height: size)
-                    .clipShape(Circle())
-            } placeholder: {
-                // Placeholder while loading
-                initialAvatar
+            AsyncImage(url: urlWithCache ?? url) { phase in
+                switch phase {
+                case .empty:
+                    // Show nothing while loading (image loads fast from cache)
+                    Color.clear
+                        .frame(width: size, height: size)
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: size, height: size)
+                        .clipShape(Circle())
+                case .failure:
+                    // Only show initial avatar if image fails to load
+                    initialAvatar
+                @unknown default:
+                    initialAvatar
+                }
             }
         } else {
             // Show initial when no photo

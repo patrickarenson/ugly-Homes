@@ -29,16 +29,9 @@ struct AuthView: View {
 
     var body: some View {
         ZStack {
-            // Gradient background
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color(red: 1.0, green: 0.65, blue: 0.3),  // Orange
-                    Color(red: 1.0, green: 0.45, blue: 0.2)   // Deeper orange
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            // Clean white background
+            Color.white
+                .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 Spacer()
@@ -50,11 +43,11 @@ struct AuthView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 200, height: 200)
-                        .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 8)
+                        .shadow(color: Color(red: 1.0, green: 0.5, blue: 0.2).opacity(0.3), radius: 20, x: 0, y: 10)
 
                     Text("The Social Marketplace for Real Estate")
                         .font(.system(size: 16))
-                        .foregroundColor(.white.opacity(0.95))
+                        .foregroundColor(Color(red: 1.0, green: 0.5, blue: 0.2))
                         .fontWeight(.medium)
                         .multilineTextAlignment(.center)
                         .offset(y: -60)
@@ -81,7 +74,10 @@ struct AuthView: View {
                             .padding()
                             .background(Color.white)
                             .cornerRadius(12)
-                            .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.gray.opacity(0.5), lineWidth: 1.5)
+                            )
                         }
 
                         HStack {
@@ -96,7 +92,10 @@ struct AuthView: View {
                         .padding()
                         .background(Color.white)
                         .cornerRadius(12)
-                        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.gray.opacity(0.5), lineWidth: 1.5)
+                        )
 
                         HStack {
                             Image(systemName: "lock.fill")
@@ -107,7 +106,10 @@ struct AuthView: View {
                         .padding()
                         .background(Color.white)
                         .cornerRadius(12)
-                        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.gray.opacity(0.5), lineWidth: 1.5)
+                        )
                     }
 
                     // Error message
@@ -115,9 +117,9 @@ struct AuthView: View {
                         Text(errorMessage)
                             .foregroundColor(.white)
                             .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 8)
-                            .background(Color.red.opacity(0.8))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(Color.red)
                             .cornerRadius(8)
                     }
 
@@ -128,7 +130,7 @@ struct AuthView: View {
                                 acceptedTermsCheckbox.toggle()
                             }) {
                                 Image(systemName: acceptedTermsCheckbox ? "checkmark.square.fill" : "square")
-                                    .foregroundColor(.white.opacity(0.9))
+                                    .foregroundColor(Color(red: 1.0, green: 0.5, blue: 0.2))
                                     .font(.system(size: 20))
                             }
 
@@ -136,7 +138,7 @@ struct AuthView: View {
                                 showTermsOfService = true
                             }) {
                                 Text("I agree to the Terms of Service")
-                                    .foregroundColor(.white.opacity(0.9))
+                                    .foregroundColor(.primary)
                                     .font(.system(size: 14))
                                     .underline()
                                     .multilineTextAlignment(.leading)
@@ -154,10 +156,10 @@ struct AuthView: View {
                             }) {
                                 HStack(spacing: 8) {
                                     Image(systemName: rememberMe ? "checkmark.square.fill" : "square")
-                                        .foregroundColor(.white.opacity(0.9))
+                                        .foregroundColor(Color(red: 1.0, green: 0.5, blue: 0.2))
                                         .font(.system(size: 20))
                                     Text("Remember me")
-                                        .foregroundColor(.white.opacity(0.9))
+                                        .foregroundColor(.primary)
                                         .font(.system(size: 14))
                                 }
                             }
@@ -180,68 +182,89 @@ struct AuthView: View {
                                 .padding()
                         }
                     }
-                    .background(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color(red: 0.2, green: 0.2, blue: 0.25),
-                                Color.black
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                    .background(Color(red: 1.0, green: 0.5, blue: 0.2))
                     .opacity((isSignUp && !acceptedTermsCheckbox) ? 0.5 : 1.0)
                     .cornerRadius(12)
-                    .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+                    .shadow(color: Color(red: 1.0, green: 0.5, blue: 0.2).opacity(0.4), radius: 10, x: 0, y: 5)
                     .disabled(isLoading || (isSignUp && !acceptedTermsCheckbox))
 
                     // OR divider
                     HStack(spacing: 12) {
                         Rectangle()
-                            .fill(Color.white.opacity(0.3))
+                            .fill(Color.gray.opacity(0.3))
                             .frame(height: 1)
                         Text("OR")
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundColor(.gray)
                         Rectangle()
-                            .fill(Color.white.opacity(0.3))
+                            .fill(Color.gray.opacity(0.3))
                             .frame(height: 1)
                     }
                     .padding(.vertical, 8)
 
-                    // Social login buttons
-                    // Google Sign In
-                    Button(action: { handleSocialLogin(provider: .google) }) {
-                        HStack {
-                            Image(systemName: "g.circle.fill")
-                                .font(.system(size: 20))
-                            Text("Continue with Google")
-                                .font(.system(size: 15, weight: .medium))
-                        }
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.white)
-                        .cornerRadius(12)
-                    }
-                    .disabled(isLoading)
-
-                    // Biometric login button
-                    if !isSignUp && hasSavedCredentials && biometricType != .none {
-                        Button(action: handleBiometricAuth) {
-                            HStack {
-                                Image(systemName: biometricType.icon)
-                                    .font(.system(size: 20))
-                                Text("Sign in with \(biometricType.name)")
-                                    .font(.system(size: 15, weight: .medium))
+                    // Social login buttons (minimal design)
+                    HStack(spacing: 12) {
+                        // Apple Sign In
+                        Button(action: { handleSocialLogin(provider: .apple) }) {
+                            VStack(spacing: 6) {
+                                Image(systemName: "apple.logo")
+                                    .font(.system(size: 24, weight: .medium))
+                                Text("Apple")
+                                    .font(.system(size: 11, weight: .medium))
                             }
-                            .foregroundColor(.white.opacity(0.9))
+                            .foregroundColor(.primary)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.white.opacity(0.15))
+                            .padding(.vertical, 16)
+                            .background(Color(UIColor.systemGray6))
                             .cornerRadius(12)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.gray.opacity(0.5), lineWidth: 1.5)
+                            )
                         }
                         .disabled(isLoading)
+
+                        // Google Sign In
+                        Button(action: { handleSocialLogin(provider: .google) }) {
+                            VStack(spacing: 6) {
+                                Image(systemName: "g.circle.fill")
+                                    .font(.system(size: 24, weight: .medium))
+                                Text("Google")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundColor(.primary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color(UIColor.systemGray6))
+                            .cornerRadius(12)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.gray.opacity(0.5), lineWidth: 1.5)
+                            )
+                        }
+                        .disabled(isLoading)
+
+                        // Biometric login button (icon only)
+                        if !isSignUp && hasSavedCredentials && biometricType != .none {
+                            Button(action: handleBiometricAuth) {
+                                VStack(spacing: 6) {
+                                    Image(systemName: biometricType.icon)
+                                        .font(.system(size: 24, weight: .medium))
+                                    Text(biometricType.name)
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                                .foregroundColor(.primary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Color(UIColor.systemGray6))
+                                .cornerRadius(12)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.gray.opacity(0.5), lineWidth: 1.5)
+                                )
+                            }
+                            .disabled(isLoading)
+                        }
                     }
 
                     // Forgot password (only show on login)
@@ -251,7 +274,7 @@ struct AuthView: View {
                         }) {
                             Text("Forgot Password?")
                                 .font(.subheadline)
-                                .foregroundColor(.white.opacity(0.9))
+                                .foregroundColor(Color(red: 1.0, green: 0.5, blue: 0.2))
                                 .underline()
                         }
                     }
@@ -264,10 +287,10 @@ struct AuthView: View {
                     }) {
                         HStack(spacing: 4) {
                             Text(isSignUp ? "Already have an account?" : "Don't have an account?")
-                                .foregroundColor(.white.opacity(0.9))
+                                .foregroundColor(.gray)
                             Text(isSignUp ? "Log In" : "Sign Up")
                                 .fontWeight(.semibold)
-                                .foregroundColor(.white)
+                                .foregroundColor(Color(red: 1.0, green: 0.5, blue: 0.2))
                         }
                         .font(.subheadline)
                     }
@@ -467,61 +490,68 @@ struct AuthView: View {
         isLoading = true
 
         Task {
-            do {
-                // Construct OAuth URL for ASWebAuthenticationSession
-                let supabaseURL = "https://pgezrygzubjieqfzyccy.supabase.co"
-                let redirectURL = "houser://oauth-callback"
-                let authURL = URL(string: "\(supabaseURL)/auth/v1/authorize?provider=\(provider.rawValue.lowercased())&redirect_to=\(redirectURL)")!
+            print("🔑 Starting OAuth flow for \(provider.rawValue)")
 
-                print("🔑 Opening OAuth URL: \(authURL)")
+            // Construct OAuth URL manually
+            let supabaseURL = "https://pgezrygzubjieqfzyccy.supabase.co"
+            let redirectURL = "houser://oauth-callback"
+            let providerName = provider == .apple ? "apple" : "google"
 
-                // Use ASWebAuthenticationSession for in-app authentication
-                await MainActor.run {
-                    let contextProvider = ASWebAuthenticationPresentationContextProvider()
-
-                    let session = ASWebAuthenticationSession(
-                        url: authURL,
-                        callbackURLScheme: "houser"
-                    ) { callbackURL, error in
-                        Task {
-                            if let error = error {
-                                print("❌ OAuth session error: \(error)")
-                                await MainActor.run {
-                                    isLoading = false
-                                    if (error as NSError).code != ASWebAuthenticationSessionError.canceledLogin.rawValue {
-                                        errorMessage = "Failed to sign in with \(provider.rawValue). Please try again."
-                                    } else {
-                                        isLoading = false
-                                    }
-                                }
-                                return
-                            }
-
-                            guard let callbackURL = callbackURL else {
-                                await MainActor.run {
-                                    isLoading = false
-                                    errorMessage = "OAuth authentication failed"
-                                }
-                                return
-                            }
-
-                            // Handle the OAuth callback
-                            print("🔗 OAuth callback received: \(callbackURL)")
-                            DeepLinkManager.shared.handleURL(callbackURL)
-                        }
-                    }
-
-                    // Set presentation context before starting
-                    session.presentationContextProvider = contextProvider
-                    session.prefersEphemeralWebBrowserSession = false
-                    session.start()
-                }
-            } catch {
+            guard let encodedRedirect = redirectURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                  let authURL = URL(string: "\(supabaseURL)/auth/v1/authorize?provider=\(providerName)&redirect_to=\(encodedRedirect)") else {
                 await MainActor.run {
                     isLoading = false
-                    print("❌ OAuth error: \(error)")
-                    errorMessage = "Failed to sign in with \(provider.rawValue). Please try again."
+                    errorMessage = "Failed to create OAuth URL"
                 }
+                return
+            }
+
+            print("🔑 OAuth URL: \(authURL.absoluteString)")
+
+            // Open OAuth URL with ASWebAuthenticationSession
+            await MainActor.run {
+                let contextProvider = ASWebAuthenticationPresentationContextProvider()
+
+                let session = ASWebAuthenticationSession(
+                    url: authURL,
+                    callbackURLScheme: "houser"
+                ) { callbackURL, error in
+                    print("🔄 ASWebAuthenticationSession callback fired")
+                    print("   callbackURL: \(callbackURL?.absoluteString ?? "nil")")
+                    print("   error: \(error?.localizedDescription ?? "nil")")
+
+                    Task {
+                        if let error = error {
+                            print("❌ OAuth session error: \(error)")
+                            print("   Error code: \((error as NSError).code)")
+                            print("   Error domain: \((error as NSError).domain)")
+                            await MainActor.run {
+                                isLoading = false
+                                if (error as NSError).code != ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                                    errorMessage = "Failed to sign in with \(provider.rawValue). Please try again."
+                                }
+                            }
+                            return
+                        }
+
+                        guard let callbackURL = callbackURL else {
+                            print("❌ No callback URL received (but also no error!)")
+                            await MainActor.run {
+                                isLoading = false
+                                errorMessage = "OAuth authentication failed - no callback URL"
+                            }
+                            return
+                        }
+
+                        // Handle the OAuth callback
+                        print("🔗 OAuth callback received: \(callbackURL.absoluteString)")
+                        DeepLinkManager.shared.handleURL(callbackURL)
+                    }
+                }
+
+                session.presentationContextProvider = contextProvider
+                session.prefersEphemeralWebBrowserSession = false
+                session.start()
             }
         }
     }

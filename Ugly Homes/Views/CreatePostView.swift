@@ -882,7 +882,7 @@ struct CreatePostView: View {
                         case schoolRating = "school_rating"
                         case hoaFee = "hoa_fee"
                         case lotSizeSqft = "lot_size_sqft"
-                        case livingAreaSqft = "living_area_sqft"
+                        case livingAreaSqft  // Now matches API's camelCase "livingAreaSqft"
                         case yearBuilt = "year_built"
                         case propertyTypeDetail = "property_type_detail"
                         case parkingSpaces = "parking_spaces"
@@ -1308,15 +1308,24 @@ struct CreatePostView: View {
                 }
 
                 // Determine living area square footage (prefer manual entry, fallback to API data)
+                print("   🔍 DEBUG Square Footage:")
+                print("      - squareFootage field: '\(squareFootage)'")
+                print("      - comprehensiveData?.livingAreaSqft: \(comprehensiveData?.livingAreaSqft?.description ?? "nil")")
+
                 let livingAreaValue: Int? = {
-                    if !squareFootage.isEmpty, let manualSqft = Int(squareFootage) {
-                        print("   ℹ️ Using manual square footage: \(manualSqft)")
-                        return manualSqft
+                    if !squareFootage.isEmpty {
+                        if let manualSqft = Int(squareFootage) {
+                            print("   ✅ Using manual square footage: \(manualSqft)")
+                            return manualSqft
+                        } else {
+                            print("   ❌ ERROR: squareFootage field has value '\(squareFootage)' but cannot convert to Int!")
+                            return nil
+                        }
                     } else if let apiSqft = comprehensiveData?.livingAreaSqft {
-                        print("   ℹ️ Using API square footage: \(apiSqft)")
+                        print("   ✅ Using API square footage from comprehensiveData: \(apiSqft)")
                         return apiSqft
                     } else {
-                        print("   ℹ️ No square footage available")
+                        print("   ⚠️ No square footage available (field empty and no API data)")
                         return nil
                     }
                 }()
@@ -1366,6 +1375,8 @@ struct CreatePostView: View {
                     additional_details: comprehensiveData?.additionalDetails
                 )
 
+                print("   📤 Sending to database with living_area_sqft: \(livingAreaValue?.description ?? "nil")")
+
                 let response: [Home] = try await SupabaseManager.shared.client
                     .from("homes")
                     .insert(newHome)
@@ -1373,7 +1384,8 @@ struct CreatePostView: View {
                     .execute()
                     .value
 
-                print("✅ Post created successfully! Response: \(response)")
+                print("✅ Post created successfully! ID: \(response.first?.id.uuidString ?? "unknown")")
+                print("   📊 Saved living_area_sqft: \(response.first?.livingAreaSqft?.description ?? "nil")")
 
                 // Notify FeedView to reload so the new post appears at the top
                 print("📢 Sending NewPostCreated notification...")

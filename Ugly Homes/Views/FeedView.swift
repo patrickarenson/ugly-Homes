@@ -19,6 +19,7 @@ struct FeedView: View {
     @State private var newlyCreatedPostIds: Set<UUID> = [] // Track posts created this session
     @State private var savedScrollHomeId: UUID? = nil // Saved position for map navigation
     @State private var shouldScrollToSaved = false // Trigger to restore position
+    @State private var hasLoadedOnce = false // Track if feed has been loaded at least once
 
     // Pagination state
     @State private var currentOffset = 0
@@ -272,8 +273,15 @@ struct FeedView: View {
                 }
             }
             .onAppear {
-                print("🎬 FeedView appeared - loading homes...")
-                loadHomes()
+                print("🎬 FeedView appeared")
+                // Only load homes on first appearance to avoid disrupting scroll position
+                if !hasLoadedOnce {
+                    print("📥 First load - loading homes...")
+                    loadHomes()
+                    hasLoadedOnce = true
+                } else {
+                    print("✅ Feed already loaded, skipping reload")
+                }
                 loadUnreadNotificationsCount()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NewPostCreated"))) { notification in
@@ -469,7 +477,7 @@ struct FeedView: View {
                 }
 
                 let response: [TrendingHomeResponse] = try await SupabaseManager.shared.client
-                    .rpc("get_trending_homes", params: ["requesting_user_id": userId])
+                    .rpc("get_trending_homes", params: ["user_id_param": userId])
                     .limit(pageSize)  // Load pageSize homes for first batch
                     .range(from: currentOffset, to: currentOffset + pageSize - 1)
                     .execute()
@@ -713,6 +721,7 @@ struct FeedView: View {
                     let zipCode: String?
                     let bedrooms: Int?
                     let bathrooms: Decimal?
+                    let livingAreaSqft: Int?
                     let imageUrls: [String]
                     let likesCount: Int
                     let commentsCount: Int
@@ -741,6 +750,7 @@ struct FeedView: View {
                         case id, userId = "user_id", title, postType = "post_type"
                         case listingType = "listing_type", description, price, address
                         case city, state, zipCode = "zip_code", bedrooms, bathrooms
+                        case livingAreaSqft = "living_area_sqft"
                         case imageUrls = "image_urls", likesCount = "likes_count"
                         case commentsCount = "comments_count", isActive = "is_active"
                         case isArchived = "is_archived", archivedAt = "archived_at"
@@ -768,7 +778,7 @@ struct FeedView: View {
 
                 // Load next batch
                 let response: [TrendingHomeResponse] = try await SupabaseManager.shared.client
-                    .rpc("get_trending_homes", params: ["requesting_user_id": userId])
+                    .rpc("get_trending_homes", params: ["user_id_param": userId])
                     .limit(pageSize)
                     .range(from: currentOffset, to: currentOffset + pageSize - 1)
                     .execute()
@@ -860,7 +870,7 @@ struct FeedView: View {
                         postType: homeResponse.postType, beforePhotos: nil,
                         schoolDistrict: nil, elementarySchool: nil, middleSchool: nil,
                         highSchool: nil, schoolRating: nil, hoaFee: nil, lotSizeSqft: nil,
-                        livingAreaSqft: nil, yearBuilt: nil, propertyTypeDetail: nil,
+                        livingAreaSqft: homeResponse.livingAreaSqft, yearBuilt: nil, propertyTypeDetail: nil,
                         parkingSpaces: nil, stories: nil, heatingType: nil,
                         coolingType: nil, appliancesIncluded: nil, additionalDetails: nil,
                         createdAt: homeResponse.createdAt, updatedAt: homeResponse.updatedAt
@@ -1058,7 +1068,6 @@ struct HomePostView: View {
                         if let priceHistory = home.priceHistory, !priceHistory.isEmpty,
                            let latestChange = priceHistory.last {
                             let isDecrease = latestChange.change < 0
-                            let changeAmount = abs(Double(truncating: latestChange.change as NSNumber))
                             let changePercent = abs(Double(truncating: latestChange.changePercent as NSNumber))
 
                             HStack(spacing: 2) {
@@ -1138,6 +1147,7 @@ struct HomePostView: View {
                             .font(.title2)
                             .foregroundColor(.black)
                     }
+                    .padding(.trailing, 4)  // Small right padding to center under ellipsis menu
                 }
             }
             .padding(.horizontal)

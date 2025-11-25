@@ -1321,10 +1321,16 @@ struct HomePostView: View {
             HStack(spacing: 12) {
                 // Username (clickable to profile)
                 NavigationLink(destination: ProfileView(viewingUserId: home.userId)) {
-                    Text("\(home.profile?.username ?? "user")")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                    HStack(spacing: 4) {
+                        Text("\(home.profile?.username ?? "user")")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+
+                        if home.profile?.isVerified == true {
+                            VerifiedBadge()
+                        }
+                    }
                 }
 
                 // Bedrooms

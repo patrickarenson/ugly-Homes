@@ -348,20 +348,27 @@ struct NotificationRowContent: View {
         let username = parts.first ?? ""
         let rest = parts.dropFirst().joined(separator: " ")
 
-        return ZStack(alignment: .leading) {
-            (Text(username).fontWeight(.bold).foregroundColor(.black) + Text(" \(rest)").foregroundColor(.secondary))
-                .font(.system(size: 14))
-                .lineLimit(2)
-
+        return HStack(spacing: 0) {
             if let userId = triggeredByUserId {
+                Button(action: {
+                    selectedProfile = userId
+                }) {
+                    Text(username)
+                        .fontWeight(.bold)
+                        .foregroundColor(.black)
+                }
+                .buttonStyle(.plain)
+            } else {
                 Text(username)
                     .fontWeight(.bold)
-                    .foregroundColor(.clear)
-                    .onTapGesture {
-                        selectedProfile = userId
-                    }
+                    .foregroundColor(.black)
             }
+
+            Text(" \(rest)")
+                .foregroundColor(.secondary)
         }
+        .font(.system(size: 14))
+        .lineLimit(2)
     }
 }
 

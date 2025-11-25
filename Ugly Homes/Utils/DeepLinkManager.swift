@@ -168,7 +168,7 @@ class DeepLinkManager: ObservableObject {
 
                     try await SupabaseManager.shared.client
                         .from("terms_acceptance")
-                        .insert(termsData)
+                        .upsert(termsData)
                         .execute()
 
                     print("✅ Terms acceptance saved for OAuth user")

@@ -27,6 +27,7 @@ struct FeedView: View {
     @State private var hasMoreData = true
     private let pageSize = 20 // Load 20 at a time
 
+
     var filteredHomes: [Home] {
         if searchText.isEmpty {
             return homes
@@ -230,6 +231,14 @@ struct FeedView: View {
                                         Spacer()
                                     }
                                 }
+
+                                // Discover More button - shows when no more data to load
+                                if !hasMoreData && !isLoadingMore && searchText.isEmpty {
+                                    DiscoverMoreView(onPropertiesImported: {
+                                        hasMoreData = true
+                                        loadHomes()
+                                    })
+                                }
                             }
                         }
                         .onChange(of: shouldScrollToSaved) { _, shouldScroll in
@@ -337,26 +346,73 @@ struct FeedView: View {
             do {
                 print("🔍 Performing database search for: \(query)")
 
-                // Search all posts in database (including current user's posts)
-                let response: [Home] = try await SupabaseManager.shared.client
+                let searchQuery = query.lowercased()
+                let searchPattern = "%\(searchQuery)%"
+
+                // Build OR filter for searching multiple fields
+                // Search: address, city, state, zip, and tags
+                var orFilters: [String] = []
+
+                // Search in address fields
+                orFilters.append("address.ilike.\(searchPattern)")
+                orFilters.append("city.ilike.\(searchPattern)")
+                orFilters.append("state.ilike.\(searchPattern)")
+                orFilters.append("zip_code.ilike.\(searchPattern)")
+
+                // Search in tags (case-insensitive array contains)
+                // Note: For tags, we'll filter client-side since array searching is complex
+
+                let orFilter = orFilters.joined(separator: ",")
+
+                // First, search by address/city/state/zip
+                let addressResults: [Home] = try await SupabaseManager.shared.client
                     .from("homes")
                     .select("*, profile:user_id(*)")
                     .eq("is_active", value: true)
                     .eq("is_archived", value: false)
+                    .or(orFilter)
                     .limit(50)
                     .execute()
                     .value
 
-                print("✅ Database search returned \(response.count) total post results")
+                // Second, search by username using the profiles table
+                // Get profiles matching the username
+                let profileMatches: [Profile] = try await SupabaseManager.shared.client
+                    .from("profiles")
+                    .select()
+                    .ilike("username", pattern: searchPattern)
+                    .limit(20)
+                    .execute()
+                    .value
 
-                // Debug: Print tags from first few results
-                for (index, home) in response.prefix(5).enumerated() {
-                    print("🏠 Property \(index + 1): \(home.title)")
-                    print("   Tags: \(home.tags ?? [])")
+                let matchingUserIds = profileMatches.map { $0.id }
+
+                var usernameResults: [Home] = []
+                if !matchingUserIds.isEmpty {
+                    // Get posts from matching users
+                    usernameResults = try await SupabaseManager.shared.client
+                        .from("homes")
+                        .select("*, profile:user_id(*)")
+                        .eq("is_active", value: true)
+                        .eq("is_archived", value: false)
+                        .in("user_id", values: matchingUserIds.map { $0.uuidString })
+                        .limit(50)
+                        .execute()
+                        .value
                 }
 
+                // Combine results (remove duplicates by ID)
+                var combinedResults = addressResults
+                for usernameResult in usernameResults {
+                    if !combinedResults.contains(where: { $0.id == usernameResult.id }) {
+                        combinedResults.append(usernameResult)
+                    }
+                }
+
+                print("✅ Database search returned \(combinedResults.count) results (\(addressResults.count) address + \(usernameResults.count) username)")
+
                 await MainActor.run {
-                    searchResults = response
+                    searchResults = combinedResults
                 }
             } catch {
                 print("❌ Error performing database search: \(error)")
@@ -626,22 +682,52 @@ struct FeedView: View {
                     homesWithProfiles.append(home)
                 }
 
-                // Sort homes to put newly created posts first (this session only)
-                let sortedHomes = homesWithProfiles.sorted { home1, home2 in
-                    let isNew1 = newlyCreatedPostIds.contains(home1.id)
-                    let isNew2 = newlyCreatedPostIds.contains(home2.id)
+                // Sort homes with improved algorithm:
+                // 1. Posts created in this session (user's own posts) - highest priority
+                // 2. Posts from last 3 days - second priority (mixed by recency)
+                // 3. Older posts - keep original trending order
+                let now = Date()
+                let threeDaysAgo = now.addingTimeInterval(-3 * 24 * 60 * 60)
+                let sevenDaysAgo = now.addingTimeInterval(-7 * 24 * 60 * 60)
 
-                    if isNew1 && !isNew2 {
-                        return true // home1 is new, put it first
-                    } else if !isNew1 && isNew2 {
-                        return false // home2 is new, put it first
-                    } else if isNew1 && isNew2 {
-                        // Both are new - sort by creation date (newest first)
+                let sortedHomes = homesWithProfiles.sorted { home1, home2 in
+                    let isSessionNew1 = newlyCreatedPostIds.contains(home1.id)
+                    let isSessionNew2 = newlyCreatedPostIds.contains(home2.id)
+
+                    // Priority 1: Posts created in this session
+                    if isSessionNew1 && !isSessionNew2 {
+                        return true
+                    } else if !isSessionNew1 && isSessionNew2 {
+                        return false
+                    } else if isSessionNew1 && isSessionNew2 {
                         return home1.createdAt > home2.createdAt
-                    } else {
-                        // Neither are new - keep trending order
+                    }
+
+                    // Priority 2: Recent posts (last 3 days) - sort by recency
+                    let isRecent1 = home1.createdAt > threeDaysAgo
+                    let isRecent2 = home2.createdAt > threeDaysAgo
+
+                    if isRecent1 && !isRecent2 {
+                        return true // Recent post goes first
+                    } else if !isRecent1 && isRecent2 {
+                        return false
+                    } else if isRecent1 && isRecent2 {
+                        // Both recent - sort by date (newest first)
+                        return home1.createdAt > home2.createdAt
+                    }
+
+                    // Priority 3: Posts from last week get slight boost
+                    let isLastWeek1 = home1.createdAt > sevenDaysAgo
+                    let isLastWeek2 = home2.createdAt > sevenDaysAgo
+
+                    if isLastWeek1 && !isLastWeek2 {
+                        return true
+                    } else if !isLastWeek1 && isLastWeek2 {
                         return false
                     }
+
+                    // Otherwise keep the server's trending order
+                    return false
                 }
 
                 homes = sortedHomes
@@ -1030,6 +1116,9 @@ struct HomePostView: View {
                                 if home.profile?.isVerified == true {
                                     VerifiedBadge()
                                 }
+
+                                // Tier badge (colored dot)
+                                TierBadge(tier: home.profile?.tier)
                             }
                         }
                         .buttonStyle(.plain)
@@ -1330,6 +1419,9 @@ struct HomePostView: View {
                         if home.profile?.isVerified == true {
                             VerifiedBadge()
                         }
+
+                        // Tier badge (colored dot)
+                        TierBadge(tier: home.profile?.tier)
                     }
                 }
 
@@ -2519,6 +2611,7 @@ struct HomePostView: View {
             }
         }
     }
+
 }
 
 // MARK: - Loading Skeleton View

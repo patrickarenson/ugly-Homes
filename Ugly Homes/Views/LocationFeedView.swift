@@ -26,6 +26,7 @@ struct LocationFeedView: View {
     @State private var isLoadingHighlightedHome = false
     @State private var lastViewedOpenHouseCount = UserDefaults.standard.integer(forKey: "lastViewedOpenHouseCount")
     @State private var savedScrollHomeId: UUID? = nil // Saved for scroll position restoration
+    @State private var visibleHomeIds: Set<UUID> = [] // Track homes visible in current map region
 
     let usStates = ["All", "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
                     "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA",
@@ -34,17 +35,18 @@ struct LocationFeedView: View {
                     "UT", "VT", "VA", "WA", "WV", "WI", "WY"]
 
     var filteredHomes: [Home] {
-        if searchText.isEmpty {
-            return homes
-        } else {
-            let filtered = allHomes.filter { home in
-                let search = searchText.lowercased()
+        // Start with homes visible on map (if we have visibility data)
+        var baseHomes = homes
+        if !visibleHomeIds.isEmpty {
+            baseHomes = homes.filter { visibleHomeIds.contains($0.id) }
+            print("📍 [LocationView] Filtering to \(baseHomes.count) homes visible on map")
+        }
 
-                // Debug: Print profile info for first home
-                if home.id == allHomes.first?.id {
-                    print("🔍 [LocationView] DEBUG - First home profile: \(home.profile?.username ?? "NO USERNAME")")
-                    print("🔍 [LocationView] DEBUG - Searching for: '\(searchText)'")
-                }
+        if searchText.isEmpty {
+            return baseHomes
+        } else {
+            let filtered = baseHomes.filter { home in
+                let search = searchText.lowercased()
 
                 // Search by tags (hashtags)
                 if let tags = home.tags {
@@ -57,7 +59,6 @@ struct LocationFeedView: View {
 
                 // Search by username
                 if let username = home.profile?.username, username.lowercased().contains(search) {
-                    print("✅ [LocationView] Found match in username: \(username)")
                     return true
                 }
 
@@ -210,12 +211,13 @@ struct LocationFeedView: View {
                 if showMapView {
                     ZStack {
                         PropertyMapView(
-                            homes: filteredHomes,
+                            homes: homes,  // Pass all homes to map, filtering happens in list view
                             userLocation: locationManager.location,
                             selectedHome: $selectedHome,
                             bookmarkedHomeIds: bookmarkedHomeIds,
                             highlightedHomeId: highlightedHomeId,
-                            isLoadingHighlightedHome: $isLoadingHighlightedHome
+                            isLoadingHighlightedHome: $isLoadingHighlightedHome,
+                            visibleHomeIds: $visibleHomeIds
                         )
                         .onTapGesture {
                             hideKeyboard()
@@ -429,7 +431,7 @@ struct LocationFeedView: View {
 
                 let response: [Home] = try await query
                     .order("created_at", ascending: false)  // Show newest properties first
-                    .limit(100)  // Increased limit to show more properties across all states
+                    .limit(5000)  // Reasonable limit for client-side clustering - switch to server-side at scale
                     .execute()
                     .value
 
@@ -704,6 +706,7 @@ struct PropertyMapView: View {
     let bookmarkedHomeIds: Set<UUID>
     let highlightedHomeId: UUID?
     @Binding var isLoadingHighlightedHome: Bool
+    @Binding var visibleHomeIds: Set<UUID>  // Report which homes are visible in current region
     @State private var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 28.5383, longitude: -81.3792),
@@ -712,14 +715,40 @@ struct PropertyMapView: View {
     )
     @State private var geocodedCoordinates: [UUID: CLLocationCoordinate2D] = [:]
     @State private var isGeocoding = false
+    @State private var currentSpan: Double = 1.0  // Track zoom level for clustering
+    @State private var currentRegion: MKCoordinateRegion?  // Track current visible region
+
+    // Threshold: show clusters when zoomed out (span > 5 degrees = ~350 miles)
+    private let clusterThreshold: Double = 5.0
+
+    var shouldShowClusters: Bool {
+        return currentSpan > clusterThreshold
+    }
 
     var body: some View {
         Map(position: $cameraPosition) {
-            ForEach(mapAnnotations) { annotation in
-                Annotation("", coordinate: annotation.coordinate) {
-                    annotationView(for: annotation)
+            if shouldShowClusters {
+                // Show city/market clusters when zoomed out
+                ForEach(marketClusters) { cluster in
+                    Annotation("", coordinate: cluster.coordinate) {
+                        clusterAnnotationView(for: cluster)
+                    }
+                }
+            } else {
+                // Show individual pins when zoomed in
+                ForEach(mapAnnotations) { annotation in
+                    Annotation("", coordinate: annotation.coordinate) {
+                        annotationView(for: annotation)
+                    }
                 }
             }
+        }
+        .onMapCameraChange { context in
+            // Track zoom level for clustering decision
+            currentSpan = context.region.span.latitudeDelta
+            currentRegion = context.region
+            // Update visible homes based on current region
+            updateVisibleHomes(in: context.region)
         }
         .onAppear {
             updateRegion()
@@ -739,6 +768,78 @@ struct PropertyMapView: View {
                 print("🗺️ Homes loaded, geocoding and updating region for highlighted home")
                 geocodeAllHomes()
                 updateRegion()
+            }
+        }
+    }
+
+    // MARK: - Market Clusters
+    var marketClusters: [MarketCluster] {
+        // Group homes by city/state
+        var cityGroups: [String: (homes: [Home], coordinate: CLLocationCoordinate2D)] = [:]
+
+        for home in homes {
+            guard let city = home.city, let state = home.state else { continue }
+
+            let key = "\(city), \(state)"
+
+            // Get coordinate for this city
+            let coordinate: CLLocationCoordinate2D
+            if let geocoded = geocodedCoordinates[home.id] {
+                coordinate = geocoded
+            } else if let fallback = getCoordinate(for: home) {
+                coordinate = fallback
+            } else {
+                continue
+            }
+
+            if cityGroups[key] != nil {
+                cityGroups[key]?.homes.append(home)
+            } else {
+                cityGroups[key] = (homes: [home], coordinate: coordinate)
+            }
+        }
+
+        // Convert to cluster objects
+        return cityGroups.map { key, value in
+            MarketCluster(
+                id: key,
+                name: key,
+                coordinate: value.coordinate,
+                count: value.homes.count,
+                homes: value.homes
+            )
+        }.sorted { $0.count > $1.count }  // Show largest clusters first
+    }
+
+    @ViewBuilder
+    func clusterAnnotationView(for cluster: MarketCluster) -> some View {
+        VStack(spacing: 2) {
+            // Count badge - simple orange circle with number
+            Text("\(cluster.count)")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.white)
+                .frame(minWidth: 28, minHeight: 28)
+                .background(
+                    Circle()
+                        .fill(Color.orange)
+                )
+
+            // City name
+            Text(cluster.name.components(separatedBy: ",").first ?? cluster.name)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.primary)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(Color(.systemBackground).opacity(0.9))
+                .cornerRadius(4)
+        }
+        .onTapGesture {
+            // Zoom into this cluster
+            withAnimation(.easeInOut(duration: 0.5)) {
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: cluster.coordinate,
+                    span: MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
+                ))
             }
         }
     }
@@ -1102,6 +1203,38 @@ struct PropertyMapView: View {
         }
         return value
     }
+
+    func updateVisibleHomes(in region: MKCoordinateRegion) {
+        // Calculate the bounds of the visible region
+        let minLat = region.center.latitude - region.span.latitudeDelta / 2
+        let maxLat = region.center.latitude + region.span.latitudeDelta / 2
+        let minLon = region.center.longitude - region.span.longitudeDelta / 2
+        let maxLon = region.center.longitude + region.span.longitudeDelta / 2
+
+        var visible = Set<UUID>()
+
+        for home in homes {
+            // Get coordinate for this home
+            let coordinate: CLLocationCoordinate2D?
+            if let geocoded = geocodedCoordinates[home.id] {
+                coordinate = geocoded
+            } else {
+                coordinate = getCoordinate(for: home)
+            }
+
+            guard let coord = coordinate else { continue }
+
+            // Check if coordinate is within visible region
+            if coord.latitude >= minLat && coord.latitude <= maxLat &&
+               coord.longitude >= minLon && coord.longitude <= maxLon {
+                visible.insert(home.id)
+            }
+        }
+
+        // Update the binding
+        visibleHomeIds = visible
+        print("🗺️ Updated visible homes: \(visible.count) properties in current view")
+    }
 }
 
 struct PropertyMapAnnotation: Identifiable {
@@ -1109,6 +1242,15 @@ struct PropertyMapAnnotation: Identifiable {
     let coordinate: CLLocationCoordinate2D
     let isUserLocation: Bool
     let home: Home?
+}
+
+// MARK: - Market Cluster
+struct MarketCluster: Identifiable {
+    let id: String  // "City, ST" as identifier
+    let name: String
+    let coordinate: CLLocationCoordinate2D
+    let count: Int
+    let homes: [Home]
 }
 
 // MARK: - US City Coordinates Database

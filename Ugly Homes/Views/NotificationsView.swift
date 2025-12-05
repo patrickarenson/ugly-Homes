@@ -10,9 +10,12 @@ import SwiftUI
 struct NotificationsView: View {
     @State private var notifications: [AppNotification] = []
     @State private var isLoading = false
+    @State private var selectedProfile: UUID?
+    @State private var selectedPost: Home?
+    @State private var currentUserId: UUID?
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 if isLoading {
                     ProgressView()
@@ -30,11 +33,13 @@ struct NotificationsView: View {
                         ForEach(notifications) { notification in
                             NotificationRowContent(
                                 notification: notification,
-                                triggeredByUserId: notification.triggeredByUserId
+                                triggeredByUserId: notification.triggeredByUserId,
+                                selectedProfile: $selectedProfile,
+                                selectedPost: $selectedPost,
+                                onMarkAsRead: {
+                                    markAsRead(notification)
+                                }
                             )
-                            .onTapGesture {
-                                markAsRead(notification)
-                            }
                         }
                     }
                     .listStyle(.plain)
@@ -42,6 +47,12 @@ struct NotificationsView: View {
             }
             .navigationTitle("Notifications")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(item: $selectedProfile) { userId in
+                ProfileView(viewingUserId: userId)
+            }
+            .navigationDestination(item: $selectedPost) { post in
+                PostDetailView(home: post, showSoldOptions: false, preloadedUserId: currentUserId)
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if !notifications.isEmpty {
@@ -54,9 +65,23 @@ struct NotificationsView: View {
             }
             .onAppear {
                 loadNotifications()
+                loadCurrentUserId()
             }
             .refreshable {
                 loadNotifications()
+            }
+        }
+    }
+
+    func loadCurrentUserId() {
+        Task {
+            do {
+                let userId = try await SupabaseManager.shared.client.auth.session.user.id
+                await MainActor.run {
+                    currentUserId = userId
+                }
+            } catch {
+                print("❌ Error loading current user ID: \(error)")
             }
         }
     }
@@ -184,10 +209,10 @@ struct NotificationsView: View {
 struct NotificationRowContent: View {
     let notification: AppNotification
     let triggeredByUserId: UUID?
-    @State private var selectedProfile: UUID?
-    @State private var selectedPost: Home?
+    @Binding var selectedProfile: UUID?
+    @Binding var selectedPost: Home?
+    let onMarkAsRead: () -> Void
     @State private var post: Home?
-    @State private var currentUserId: UUID?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -235,7 +260,7 @@ struct NotificationRowContent: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.borderless)
                 }
 
                 // Unread indicator
@@ -247,15 +272,8 @@ struct NotificationRowContent: View {
             }
         }
         .padding(.vertical, 8)
-        .navigationDestination(item: $selectedProfile) { userId in
-            ProfileView(viewingUserId: userId)
-        }
-        .navigationDestination(item: $selectedPost) { post in
-            PostDetailView(home: post, showSoldOptions: false, preloadedUserId: currentUserId)
-        }
         .onAppear {
             loadPost()
-            loadCurrentUserId()
         }
     }
 
@@ -277,19 +295,6 @@ struct NotificationRowContent: View {
                 }
             } catch {
                 print("❌ Error loading post: \(error)")
-            }
-        }
-    }
-
-    func loadCurrentUserId() {
-        Task {
-            do {
-                let userId = try await SupabaseManager.shared.client.auth.session.user.id
-                await MainActor.run {
-                    currentUserId = userId
-                }
-            } catch {
-                print("❌ Error loading current user ID: \(error)")
             }
         }
     }
@@ -342,13 +347,14 @@ struct NotificationRowContent: View {
         }
     }
 
+    @ViewBuilder
     func formattedMessage(_ message: String, triggeredByUserId: UUID?) -> some View {
         let cleanMessage = message.replacingOccurrences(of: ">", with: "").replacingOccurrences(of: "  ", with: " ").trimmingCharacters(in: .whitespaces)
         let parts = cleanMessage.components(separatedBy: " ")
         let username = parts.first ?? ""
         let rest = parts.dropFirst().joined(separator: " ")
 
-        return HStack(spacing: 0) {
+        HStack(spacing: 0) {
             if let userId = triggeredByUserId {
                 Button(action: {
                     selectedProfile = userId
@@ -357,7 +363,7 @@ struct NotificationRowContent: View {
                         .fontWeight(.bold)
                         .foregroundColor(.black)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
             } else {
                 Text(username)
                     .fontWeight(.bold)

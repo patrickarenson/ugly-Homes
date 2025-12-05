@@ -72,17 +72,20 @@ class ContentModerationManager {
     func moderateText(_ text: String) -> ModerationResult {
         let lowercased = text.lowercased()
 
-        // 1. Check for auto-block words
+        // Normalize text for better detection (remove spaces, special chars)
+        let normalized = normalizeText(lowercased)
+
+        // 1. Check for auto-block words (including variations)
         for word in blockedWords {
-            if lowercased.contains(word) {
-                print("🚫 Content blocked: Contains '\(word)'")
+            if containsProfanityVariation(normalized: normalized, original: lowercased, blockedWord: word) {
+                print("🚫 Content blocked: Contains variation of '\(word)'")
                 print("📝 Full text (first 100 chars): \(String(text.prefix(100)))")
 
-                // Create user-friendly error message with the word highlighted
+                // Create user-friendly error message
                 let userMessage = """
-                Your post contains the word "\(word)" which violates our content policy.
+                Your post contains language that violates our content policy.
 
-                Please remove or replace this word and try again.
+                Please remove inappropriate language and try again.
                 """
                 return .blocked(reason: userMessage)
             }
@@ -164,6 +167,118 @@ class ContentModerationManager {
     }
 
     // MARK: - Helper Methods
+
+    /// Normalize text by removing spaces, special characters, and converting leet speak
+    private func normalizeText(_ text: String) -> String {
+        var normalized = text.lowercased()
+
+        // Remove spaces and common separators
+        normalized = normalized.replacingOccurrences(of: " ", with: "")
+        normalized = normalized.replacingOccurrences(of: "-", with: "")
+        normalized = normalized.replacingOccurrences(of: "_", with: "")
+        normalized = normalized.replacingOccurrences(of: ".", with: "")
+        normalized = normalized.replacingOccurrences(of: "*", with: "")
+
+        // Convert leet speak / number substitutions
+        normalized = normalized.replacingOccurrences(of: "0", with: "o")
+        normalized = normalized.replacingOccurrences(of: "1", with: "i")
+        normalized = normalized.replacingOccurrences(of: "3", with: "e")
+        normalized = normalized.replacingOccurrences(of: "4", with: "a")
+        normalized = normalized.replacingOccurrences(of: "5", with: "s")
+        normalized = normalized.replacingOccurrences(of: "7", with: "t")
+        normalized = normalized.replacingOccurrences(of: "8", with: "b")
+        normalized = normalized.replacingOccurrences(of: "$", with: "s")
+        normalized = normalized.replacingOccurrences(of: "@", with: "a")
+        normalized = normalized.replacingOccurrences(of: "!", with: "i")
+
+        // Remove repeated characters (fuuuck -> fuck)
+        var result = ""
+        var lastChar: Character?
+        for char in normalized {
+            if char != lastChar {
+                result.append(char)
+            } else if char.isLetter && result.count < 2 {
+                // Allow one repeat for double letters (like 'ee', 'oo')
+                result.append(char)
+            }
+            lastChar = char
+        }
+
+        return result
+    }
+
+    /// Check if text contains profanity or variations
+    private func containsProfanityVariation(normalized: String, original: String, blockedWord: String) -> Bool {
+        // 1. Check exact match in original
+        if original.contains(blockedWord) {
+            return true
+        }
+
+        // 2. Check normalized version (catches leet speak, spaces, repeated letters)
+        if normalized.contains(blockedWord) {
+            return true
+        }
+
+        // 3. Check for common misspellings and shortened versions
+        let variations = generateVariations(of: blockedWord)
+        for variation in variations {
+            if normalized.contains(variation) || original.contains(variation) {
+                return true
+            }
+        }
+
+        // 4. Check with wildcards for missing letters (e.g., "fck" for "fuck")
+        if blockedWord.count >= 4 {
+            // Remove vowels and check
+            let noVowels = blockedWord.replacingOccurrences(of: "a", with: "")
+                                      .replacingOccurrences(of: "e", with: "")
+                                      .replacingOccurrences(of: "i", with: "")
+                                      .replacingOccurrences(of: "o", with: "")
+                                      .replacingOccurrences(of: "u", with: "")
+
+            if noVowels.count >= 2 && (normalized.contains(noVowels) || original.contains(noVowels)) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /// Generate common variations of a blocked word
+    private func generateVariations(of word: String) -> [String] {
+        var variations: [String] = []
+
+        // Common character substitutions
+        let substitutions: [Character: [Character]] = [
+            "a": ["@", "4"],
+            "e": ["3"],
+            "i": ["1", "!"],
+            "o": ["0"],
+            "s": ["$", "5"],
+            "t": ["7"],
+            "b": ["8"]
+        ]
+
+        // Generate one-level substitutions
+        for (original, replacements) in substitutions {
+            for replacement in replacements {
+                let variation = word.replacingOccurrences(of: String(original), with: String(replacement))
+                if variation != word {
+                    variations.append(variation)
+                }
+            }
+        }
+
+        // Shortened versions (remove last 1-2 characters)
+        if word.count > 3 {
+            variations.append(String(word.dropLast()))
+            if word.count > 4 {
+                variations.append(String(word.dropLast(2)))
+            }
+        }
+
+        return variations
+    }
 
     private func isExcessiveCaps(_ text: String) -> Bool {
         // More than 60% uppercase letters in text longer than 10 chars

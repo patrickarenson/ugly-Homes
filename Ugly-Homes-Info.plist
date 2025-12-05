@@ -56,5 +56,7 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Houser uses your location to show you properties in your area and personalize your feed.</string>
 </dict>
 </plist>

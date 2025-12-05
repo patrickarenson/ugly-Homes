@@ -19,6 +19,9 @@ struct Profile: Codable, Identifiable, Hashable {
     var hasCompletedOnboarding: Bool?
     var followersCount: Int?
     var followingCount: Int?
+    var points: Int?
+    var tier: String?
+    var streakDays: Int?
     var createdAt: Date?
     var updatedAt: Date?
 
@@ -34,6 +37,9 @@ struct Profile: Codable, Identifiable, Hashable {
         case hasCompletedOnboarding = "has_completed_onboarding"
         case followersCount = "followers_count"
         case followingCount = "following_count"
+        case points
+        case tier
+        case streakDays = "streak_days"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }

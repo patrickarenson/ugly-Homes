@@ -56,6 +56,9 @@ struct ProfileView: View {
                             if profile.isVerified == true {
                                 VerifiedBadge()
                             }
+
+                            // Tier badge (small dot)
+                            TierBadge(tier: profile.tier)
                         }
 
                         if let market = profile.market, !market.isEmpty {
@@ -129,6 +132,11 @@ struct ProfileView: View {
                     profileStatsView
                         .padding(.horizontal)
                         .padding(.vertical, 8)
+
+                    // Tier progress bar - centered, 3/4 width
+                    TierLabel(tier: profile.tier, points: profile.points)
+                        .padding(.horizontal, 50)
+                        .padding(.bottom, 12)
 
                     Divider()
 

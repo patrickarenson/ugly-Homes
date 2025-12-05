@@ -1573,9 +1573,8 @@ struct CreatePostView: View {
                 print("✅ Post updated successfully!")
                 isUploading = false
 
-                // Notify feed to refresh
-                Foundation.NotificationCenter.default.post(name: Foundation.Notification.Name("RefreshFeed"), object: nil)
-
+                // Don't refresh entire feed - just dismiss and let SwiftUI update the post
+                // The post will update automatically in the feed
                 dismiss()
 
             } catch {

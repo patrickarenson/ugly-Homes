@@ -16,10 +16,21 @@ struct EditProfileView: View {
     @State private var fullName: String
     @State private var bio: String
     @State private var market: String
+    @State private var selectedUserTypes: Set<String>
     @State private var selectedImage: PhotosPickerItem?
     @State private var profileImageData: Data?
     @State private var isUploading = false
     @State private var errorMessage = ""
+
+    let userTypeOptions = [
+        ("realtor", "Realtor/Broker", "Licensed real estate agent"),
+        ("professional", "Real Estate Professional", "Lender, appraiser, title, etc."),
+        ("buyer", "Home Buyer", "Looking to purchase a home"),
+        ("renter", "Renter", "Looking for my next rental"),
+        ("investor", "Investor/Flipper", "Fix & flip, rentals, wholesaling"),
+        ("designer", "Designer/Decorator", "Interior design or staging"),
+        ("browsing", "Browsing", "Just exploring properties")
+    ]
 
     init(profile: Profile) {
         self.currentProfile = profile
@@ -27,6 +38,7 @@ struct EditProfileView: View {
         _fullName = State(initialValue: profile.fullName ?? "")
         _bio = State(initialValue: profile.bio ?? "")
         _market = State(initialValue: profile.market ?? "")
+        _selectedUserTypes = State(initialValue: Set(profile.userTypes ?? []))
     }
 
     var body: some View {
@@ -154,6 +166,54 @@ struct EditProfileView: View {
                             .padding()
                             .background(Color(.systemGray6))
                             .cornerRadius(8)
+                    }
+
+                    // User Types (multi-select)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("What brings you to Houser?")
+                            .font(.system(size: 15, weight: .medium))
+
+                        Text("Select all that apply")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+
+                        VStack(spacing: 8) {
+                            ForEach(userTypeOptions, id: \.0) { option in
+                                Button(action: {
+                                    if selectedUserTypes.contains(option.0) {
+                                        selectedUserTypes.remove(option.0)
+                                    } else {
+                                        selectedUserTypes.insert(option.0)
+                                    }
+                                }) {
+                                    HStack(spacing: 12) {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(option.1)
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(selectedUserTypes.contains(option.0) ? .white : .primary)
+
+                                            Text(option.2)
+                                                .font(.caption)
+                                                .foregroundColor(selectedUserTypes.contains(option.0) ? .white.opacity(0.9) : .gray)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: selectedUserTypes.contains(option.0) ? "checkmark.circle.fill" : "circle")
+                                            .foregroundColor(selectedUserTypes.contains(option.0) ? .white : .gray.opacity(0.5))
+                                    }
+                                    .padding()
+                                    .background(
+                                        selectedUserTypes.contains(option.0) ?
+                                            Color.orange :
+                                            Color(.systemGray6)
+                                    )
+                                    .cornerRadius(10)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     }
 
                     if !errorMessage.isEmpty {
@@ -304,6 +364,7 @@ struct EditProfileView: View {
                     let bio: String?
                     let market: String?
                     let avatar_url: String?
+                    let user_types: [String]?
                 }
 
                 let finalAvatarUrl = avatarUrl ?? currentProfile.avatarUrl
@@ -313,7 +374,8 @@ struct EditProfileView: View {
                     full_name: fullName.isEmpty ? nil : fullName,
                     bio: bio.isEmpty ? nil : bio,
                     market: market.isEmpty ? nil : market,
-                    avatar_url: finalAvatarUrl
+                    avatar_url: finalAvatarUrl,
+                    user_types: selectedUserTypes.isEmpty ? nil : Array(selectedUserTypes)
                 )
 
                 try await SupabaseManager.shared.client

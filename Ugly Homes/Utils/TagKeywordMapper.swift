@@ -114,6 +114,26 @@ struct TagKeywordMapper {
         "MotivatedSeller": [
             "motivated", "motivated seller", "must sell", "quick sale",
             "price reduced", "reduced price", "bring offers", "all offers considered"
+        ],
+
+        // Distressed/Investor Tags
+        "Foreclosure": [
+            "foreclosure", "bank owned", "bank-owned", "reo",
+            "real estate owned", "distressed"
+        ],
+
+        "ShortSale": [
+            "short sale", "short-sale", "underwater", "upside down"
+        ],
+
+        "Auction": [
+            "auction", "absolute auction", "estate sale", "probate",
+            "estate auction", "bank auction"
+        ],
+
+        "PreForeclosure": [
+            "pre-foreclosure", "preforeclosure", "pre foreclosure",
+            "notice of default", "lis pendens"
         ]
     ]
 

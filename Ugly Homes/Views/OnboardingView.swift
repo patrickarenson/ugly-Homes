@@ -7,6 +7,8 @@
 
 import SwiftUI
 import PhotosUI
+import CoreLocation
+import MapKit
 
 struct OnboardingView: View {
     @Environment(\.dismiss) var dismiss
@@ -19,13 +21,23 @@ struct OnboardingView: View {
     @State private var isUploading = false
     @State private var errorMessage: String?
 
+    // Buyer preferences
+    @State private var selectedPriceRange: String = ""
+    @State private var selectedBedrooms: Int = 0
+    @State private var selectedBathrooms: Int = 0
+
+    // Background import tracking
+    @State private var hasTriggeredImport = false
+    @State private var phase1PropertyIds: [[String: String]] = [] // Store for Phase 2 backfill
+
     let userId: UUID
     let existingUsername: String
 
     let userTypeOptions = [
         ("realtor", "Realtor/Broker", "Licensed real estate agent"),
         ("professional", "Real Estate Professional", "Lender, appraiser, title, etc."),
-        ("buyer", "Home Buyer", "Looking to buy or rent"),
+        ("buyer", "Home Buyer", "Looking to purchase a home"),
+        ("renter", "Renter", "Looking for my next rental"),
         ("investor", "Investor/Flipper", "Fix & flip, rentals, wholesaling"),
         ("designer", "Designer/Decorator", "Interior design or staging"),
         ("browsing", "Browsing", "Just exploring properties")
@@ -76,7 +88,10 @@ struct OnboardingView: View {
                     selectedUserTypes: $selectedUserTypes,
                     location: $location,
                     username: existingUsername,
-                    userTypeOptions: userTypeOptions
+                    userTypeOptions: userTypeOptions,
+                    selectedPriceRange: $selectedPriceRange,
+                    selectedBedrooms: $selectedBedrooms,
+                    selectedBathrooms: $selectedBathrooms
                 )
                 .tag(1)
 
@@ -171,12 +186,191 @@ struct OnboardingView: View {
 
     func nextStep() {
         if currentStep < 3 {
+            // Trigger Phase 1 import when leaving Step 1 (User Type & Location)
+            if currentStep == 1 && !hasTriggeredImport && !location.isEmpty {
+                hasTriggeredImport = true
+                triggerPhase1Import()
+            }
+
             withAnimation {
                 currentStep += 1
             }
         } else {
-            // Final step - save everything
+            // Final step - save everything and trigger Phase 2
             completeOnboarding()
+        }
+    }
+
+    /// Get primary user type for import
+    private func getPrimaryUserType() -> String {
+        if selectedUserTypes.contains("buyer") {
+            return "buyer"
+        } else if selectedUserTypes.contains("renter") {
+            return "renter"
+        } else if selectedUserTypes.contains("investor") {
+            return "investor"
+        } else if selectedUserTypes.contains("realtor") {
+            return "realtor"
+        } else if selectedUserTypes.contains("professional") {
+            return "professional"
+        } else if selectedUserTypes.contains("designer") {
+            return "designer"
+        } else {
+            return "browsing"
+        }
+    }
+
+    /// Build preferences dictionary for buyer/renter
+    private func buildPreferences(userType: String) -> [String: Any]? {
+        guard userType == "buyer" || userType == "renter" else { return nil }
+
+        var preferences: [String: Any] = [:]
+
+        // Parse price range
+        if !selectedPriceRange.isEmpty {
+            if userType == "renter" {
+                // Rental price ranges (monthly rent)
+                let rentalPriceRanges: [String: (Int, Int)] = [
+                    "under1500": (0, 1500),
+                    "1500-2500": (1500, 2500),
+                    "2500-3500": (2500, 3500),
+                    "3500-5000": (3500, 5000),
+                    "over5000": (5000, 20000)
+                ]
+                if let range = rentalPriceRanges[selectedPriceRange] {
+                    preferences["minPrice"] = range.0
+                    preferences["maxPrice"] = range.1
+                }
+            } else {
+                // Purchase price ranges
+                let priceRanges: [String: (Int, Int)] = [
+                    "under200k": (0, 200000),
+                    "200k-400k": (200000, 400000),
+                    "400k-600k": (400000, 600000),
+                    "600k-800k": (600000, 800000),
+                    "800k-1m": (800000, 1000000),
+                    "over1m": (1000000, 10000000)
+                ]
+                if let range = priceRanges[selectedPriceRange] {
+                    preferences["minPrice"] = range.0
+                    preferences["maxPrice"] = range.1
+                }
+            }
+        }
+
+        if selectedBedrooms > 0 {
+            preferences["bedrooms"] = selectedBedrooms
+        }
+        if selectedBathrooms > 0 {
+            preferences["bathrooms"] = selectedBathrooms
+        }
+
+        return preferences.isEmpty ? nil : preferences
+    }
+
+    /// Phase 1: Fast import of 10 properties (no descriptions) - runs while user continues onboarding
+    /// On WiFi: Fetches full photos and descriptions for best experience
+    /// On Cellular: Fast mode - basic data only, Phase 2 fills in later
+    func triggerPhase1Import() {
+        Task {
+            let userType = getPrimaryUserType()
+            let isOnWiFi = NetworkMonitor.shared.shouldFetchFullData
+
+            // Build request body for Phase 1
+            var body: [String: Any] = [
+                "userType": userType,
+                "location": location,
+                "phase": 1,
+                "fullPhotos": isOnWiFi // WiFi = fetch all photos and descriptions
+            ]
+
+            if let preferences = buildPreferences(userType: userType) {
+                body["preferences"] = preferences
+            }
+
+            print("🌐 Network: \(isOnWiFi ? "WiFi - fetching full photos" : "Cellular - fast mode")")
+
+            // Call the API
+            guard let url = URL(string: "\(Config.apiBaseURL)/api/onboarding-import") else { return }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                let (data, response) = try await URLSession.shared.data(for: request)
+
+                if let httpResponse = response as? HTTPURLResponse {
+                    print("🏠 Phase 1 import triggered: \(httpResponse.statusCode)")
+
+                    // Parse response to get property IDs for Phase 2 backfill
+                    if httpResponse.statusCode == 200,
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let properties = json["properties"] as? [[String: Any]] {
+
+                        // Extract id and zpid for each property
+                        var propertyIds: [[String: String]] = []
+                        for prop in properties {
+                            if let id = prop["id"] as? String,
+                               let zpid = prop["zpid"] as? String {
+                                propertyIds.append(["id": id, "zpid": zpid])
+                            }
+                        }
+
+                        await MainActor.run {
+                            self.phase1PropertyIds = propertyIds
+                        }
+
+                        print("🏠 Phase 1 complete: \(properties.count) properties, stored \(propertyIds.count) IDs for Phase 2")
+                    }
+                }
+            } catch {
+                print("⚠️ Phase 1 import error: \(error.localizedDescription)")
+                // Don't show error to user - this is background operation
+            }
+        }
+    }
+
+    /// Phase 2: Import remaining 15 properties + backfill descriptions for Phase 1 properties
+    func triggerPhase2Import() {
+        Task {
+            let userType = getPrimaryUserType()
+
+            // Build request body for Phase 2
+            var body: [String: Any] = [
+                "userType": userType,
+                "location": location,
+                "phase": 2
+            ]
+
+            if let preferences = buildPreferences(userType: userType) {
+                body["preferences"] = preferences
+            }
+
+            // Include Phase 1 property IDs for description backfill
+            if !phase1PropertyIds.isEmpty {
+                body["propertyIds"] = phase1PropertyIds
+            }
+
+            // Call the API
+            guard let url = URL(string: "\(Config.apiBaseURL)/api/onboarding-import") else { return }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                let (_, response) = try await URLSession.shared.data(for: request)
+
+                if let httpResponse = response as? HTTPURLResponse {
+                    print("🏠 Phase 2 import complete: \(httpResponse.statusCode)")
+                }
+            } catch {
+                print("⚠️ Phase 2 import error: \(error.localizedDescription)")
+                // Don't show error to user - this is background operation
+            }
         }
     }
 
@@ -262,6 +456,11 @@ struct OnboardingView: View {
 
                 print("✅ Profile updated via onboarding")
                 print("✅ Onboarding marked complete in database for user: \(userId.uuidString)")
+
+                // Trigger Phase 2 import in background (imports remaining 15 properties + descriptions)
+                if hasTriggeredImport && !location.isEmpty {
+                    triggerPhase2Import()
+                }
 
                 // Post notification to refresh profile
                 await MainActor.run {
@@ -427,12 +626,192 @@ struct PhotoStep: View {
     }
 }
 
+// MARK: - Location Search Completer for Autocomplete
+class LocationSearchCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDelegate {
+    @Published var searchQuery = ""
+    @Published var suggestions: [MKLocalSearchCompletion] = []
+    @Published var isSearching = false
+
+    private let completer = MKLocalSearchCompleter()
+
+    override init() {
+        super.init()
+        completer.delegate = self
+        completer.resultTypes = .address
+        // Filter to US only for better results
+        let usRegion = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 39.8283, longitude: -98.5795),
+            span: MKCoordinateSpan(latitudeDelta: 60, longitudeDelta: 60)
+        )
+        completer.region = usRegion
+    }
+
+    func search(_ query: String) {
+        searchQuery = query
+        if query.count >= 2 {
+            isSearching = true
+            completer.queryFragment = query
+        } else {
+            suggestions = []
+            isSearching = false
+        }
+    }
+
+    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        // Filter to only show city/state results (not specific addresses)
+        suggestions = completer.results.filter { result in
+            // Include results that look like "City, State" format
+            let hasComma = result.title.contains(",") || result.subtitle.contains(",")
+            let isNotStreetAddress = !result.title.contains(where: { $0.isNumber })
+            return hasComma || isNotStreetAddress
+        }.prefix(5).map { $0 }
+        isSearching = false
+    }
+
+    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        isSearching = false
+        print("Search completer error: \(error.localizedDescription)")
+    }
+
+    func formatLocation(_ completion: MKLocalSearchCompletion) -> String {
+        if !completion.subtitle.isEmpty {
+            return "\(completion.title), \(completion.subtitle)"
+        }
+        return completion.title
+    }
+}
+
+// MARK: - Location Manager for Current Location (Onboarding)
+class OnboardingLocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    private let geocoder = CLGeocoder()
+
+    @Published var locationString: String = ""
+    @Published var isLoading: Bool = false
+    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+        authorizationStatus = manager.authorizationStatus
+    }
+
+    func requestLocation() {
+        isLoading = true
+
+        switch manager.authorizationStatus {
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse, .authorizedAlways:
+            manager.requestLocation()
+        case .denied, .restricted:
+            isLoading = false
+        @unknown default:
+            isLoading = false
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        authorizationStatus = manager.authorizationStatus
+
+        if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
+            manager.requestLocation()
+        } else if manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted {
+            isLoading = false
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.first else {
+            isLoading = false
+            return
+        }
+
+        // Reverse geocode to get city, state
+        geocoder.reverseGeocodeLocation(location) { [weak self] placemarks, error in
+            DispatchQueue.main.async {
+                self?.isLoading = false
+
+                if let placemark = placemarks?.first {
+                    let city = placemark.locality ?? ""
+                    let state = placemark.administrativeArea ?? ""
+
+                    if !city.isEmpty && !state.isEmpty {
+                        self?.locationString = "\(city), \(state)"
+                    } else if !city.isEmpty {
+                        self?.locationString = city
+                    }
+                }
+            }
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        isLoading = false
+        print("Location error: \(error.localizedDescription)")
+    }
+}
+
 // MARK: - User Type & Location Step
 struct UserTypeLocationStep: View {
     @Binding var selectedUserTypes: Set<String>
     @Binding var location: String
     let username: String
     let userTypeOptions: [(String, String, String)]
+
+    // Buyer/Renter preferences
+    @Binding var selectedPriceRange: String
+    @Binding var selectedBedrooms: Int
+    @Binding var selectedBathrooms: Int
+
+    // Location manager and search
+    @StateObject private var locationManager = OnboardingLocationManager()
+    @StateObject private var searchCompleter = LocationSearchCompleter()
+    @State private var locationInput = ""
+    @State private var showSuggestions = false
+    @FocusState private var isLocationFocused: Bool
+
+    let buyerPriceRangeOptions = [
+        ("under200k", "Under $200K"),
+        ("200k-400k", "$200K - $400K"),
+        ("400k-600k", "$400K - $600K"),
+        ("600k-800k", "$600K - $800K"),
+        ("800k-1m", "$800K - $1M"),
+        ("over1m", "$1M+")
+    ]
+
+    let renterPriceRangeOptions = [
+        ("under1500", "Under $1,500/mo"),
+        ("1500-2500", "$1,500 - $2,500/mo"),
+        ("2500-3500", "$2,500 - $3,500/mo"),
+        ("3500-5000", "$3,500 - $5,000/mo"),
+        ("over5000", "$5,000+/mo")
+    ]
+
+    var showBuyerPreferences: Bool {
+        selectedUserTypes.contains("buyer")
+    }
+
+    var showRenterPreferences: Bool {
+        selectedUserTypes.contains("renter")
+    }
+
+    var currentPriceRangeOptions: [(String, String)] {
+        if showRenterPreferences && !showBuyerPreferences {
+            return renterPriceRangeOptions
+        }
+        return buyerPriceRangeOptions
+    }
+
+    var preferencesTitle: String {
+        if showBuyerPreferences && showRenterPreferences {
+            return "Your Home Preferences"
+        } else if showRenterPreferences {
+            return "Your Rental Preferences"
+        }
+        return "Your Home Preferences"
+    }
 
     var body: some View {
         ScrollView {
@@ -491,21 +870,269 @@ struct UserTypeLocationStep: View {
                         }
                     }
 
+                    // Buyer/Renter Preferences (shown inline when "buyer" or "renter" is selected)
+                    if showBuyerPreferences || showRenterPreferences {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text(preferencesTitle)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(Color(red: 1.0, green: 0.55, blue: 0.25))
+
+                            // Price Range
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(showRenterPreferences && !showBuyerPreferences ? "Monthly Rent" : "Price Range")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+
+                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                    ForEach(currentPriceRangeOptions, id: \.0) { option in
+                                        Button(action: {
+                                            selectedPriceRange = selectedPriceRange == option.0 ? "" : option.0
+                                        }) {
+                                            Text(option.1)
+                                                .font(.caption)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(selectedPriceRange == option.0 ? .white : .primary)
+                                                .padding(.vertical, 10)
+                                                .frame(maxWidth: .infinity)
+                                                .background(
+                                                    selectedPriceRange == option.0 ?
+                                                    Color(red: 1.0, green: 0.55, blue: 0.25) :
+                                                    Color.gray.opacity(0.1)
+                                                )
+                                                .cornerRadius(8)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+
+                            // Bedrooms
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Bedrooms")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+
+                                HStack(spacing: 8) {
+                                    ForEach([1, 2, 3, 4, 5], id: \.self) { num in
+                                        Button(action: {
+                                            selectedBedrooms = selectedBedrooms == num ? 0 : num
+                                        }) {
+                                            Text(num == 5 ? "5+" : "\(num)")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(selectedBedrooms == num ? .white : .primary)
+                                                .frame(width: 44, height: 44)
+                                                .background(
+                                                    selectedBedrooms == num ?
+                                                    Color(red: 1.0, green: 0.55, blue: 0.25) :
+                                                    Color.gray.opacity(0.1)
+                                                )
+                                                .cornerRadius(8)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+
+                            // Bathrooms
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Bathrooms")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+
+                                HStack(spacing: 8) {
+                                    ForEach([1, 2, 3, 4], id: \.self) { num in
+                                        Button(action: {
+                                            selectedBathrooms = selectedBathrooms == num ? 0 : num
+                                        }) {
+                                            Text(num == 4 ? "4+" : "\(num)")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(selectedBathrooms == num ? .white : .primary)
+                                                .frame(width: 44, height: 44)
+                                                .background(
+                                                    selectedBathrooms == num ?
+                                                    Color(red: 1.0, green: 0.55, blue: 0.25) :
+                                                    Color.gray.opacity(0.1)
+                                                )
+                                                .cornerRadius(8)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                        .padding()
+                        .background(Color(red: 1.0, green: 0.55, blue: 0.25).opacity(0.08))
+                        .cornerRadius(12)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .animation(.easeInOut(duration: 0.3), value: showBuyerPreferences || showRenterPreferences)
+                    }
+
                     // Location
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Location")
                             .font(.subheadline)
                             .foregroundColor(.gray)
 
-                        TextField("e.g., San Francisco, CA", text: $location)
-                            .padding()
-                            .background(Color.gray.opacity(0.1))
+                        // Use Current Location button
+                        Button(action: {
+                            locationManager.requestLocation()
+                        }) {
+                            HStack(spacing: 10) {
+                                if locationManager.isLoading {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        .scaleEffect(0.8)
+                                } else {
+                                    Image(systemName: "location.fill")
+                                }
+                                Text(locationManager.isLoading ? "Getting location..." : "Use Current Location")
+                                    .fontWeight(.medium)
+                            }
+                            .font(.subheadline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [
+                                        Color(red: 0.3, green: 0.6, blue: 1.0),
+                                        Color(red: 0.2, green: 0.5, blue: 0.9)
+                                    ]),
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
                             .cornerRadius(10)
+                        }
+                        .disabled(locationManager.isLoading)
+
+                        // Show denial message if location denied
+                        if locationManager.authorizationStatus == .denied {
+                            Text("Location access denied. Please enable in Settings or type your location below.")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+
+                        // Divider with "or"
+                        HStack {
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(height: 1)
+                            Text("or")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(height: 1)
+                        }
+                        .padding(.vertical, 4)
+
+                        // Location text field with autocomplete
+                        VStack(alignment: .leading, spacing: 0) {
+                            TextField("Type your city, e.g. Orlando, FL", text: $locationInput)
+                                .padding()
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(showSuggestions && !searchCompleter.suggestions.isEmpty ? 0 : 10)
+                                .cornerRadius(10, corners: showSuggestions && !searchCompleter.suggestions.isEmpty ? [.topLeft, .topRight] : [.topLeft, .topRight, .bottomLeft, .bottomRight])
+                                .focused($isLocationFocused)
+                                .onChange(of: locationInput) { _, newValue in
+                                    searchCompleter.search(newValue)
+                                    showSuggestions = true
+                                }
+                                .onSubmit {
+                                    // If they press enter, use what they typed
+                                    location = locationInput
+                                    showSuggestions = false
+                                }
+
+                            // Autocomplete suggestions dropdown
+                            if showSuggestions && !searchCompleter.suggestions.isEmpty && isLocationFocused {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    ForEach(searchCompleter.suggestions, id: \.self) { suggestion in
+                                        Button(action: {
+                                            let formatted = searchCompleter.formatLocation(suggestion)
+                                            locationInput = formatted
+                                            location = formatted
+                                            showSuggestions = false
+                                            isLocationFocused = false
+                                        }) {
+                                            HStack {
+                                                Image(systemName: "mappin.circle.fill")
+                                                    .foregroundColor(Color(red: 1.0, green: 0.55, blue: 0.25))
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text(suggestion.title)
+                                                        .font(.subheadline)
+                                                        .foregroundColor(.primary)
+                                                    if !suggestion.subtitle.isEmpty {
+                                                        Text(suggestion.subtitle)
+                                                            .font(.caption)
+                                                            .foregroundColor(.gray)
+                                                    }
+                                                }
+                                                Spacer()
+                                            }
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 10)
+                                        }
+                                        .buttonStyle(.plain)
+
+                                        if suggestion != searchCompleter.suggestions.last {
+                                            Divider()
+                                                .padding(.leading, 40)
+                                        }
+                                    }
+                                }
+                                .background(Color(.systemBackground))
+                                .cornerRadius(10, corners: [.bottomLeft, .bottomRight])
+                                .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, 40)
+
+                // Extra space at bottom for scrolling
+                Spacer().frame(height: 100)
             }
         }
+        .onChange(of: locationManager.locationString) { _, newValue in
+            if !newValue.isEmpty {
+                location = newValue
+                locationInput = newValue
+                showSuggestions = false
+            }
+        }
+        .onTapGesture {
+            // Dismiss suggestions when tapping outside
+            if showSuggestions {
+                showSuggestions = false
+                isLocationFocused = false
+            }
+        }
+    }
+}
+
+// MARK: - Corner Radius Extension
+extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
+    }
+}
+
+struct RoundedCorner: Shape {
+    var radius: CGFloat = .infinity
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+        return Path(path.cgPath)
     }
 }
 

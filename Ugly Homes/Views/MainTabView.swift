@@ -14,6 +14,7 @@ struct MainTabView: View {
     @State private var deepLinkedProfile: Profile? = nil
     @State private var searchText = ""
     @State private var selectedTab = 0
+    @State private var previousTabBeforeMap: Int = 0  // Track where user came from before going to map
     @State private var showOnboarding = false
     @State private var currentUserId: UUID?
     @State private var currentUsername: String?
@@ -80,17 +81,23 @@ struct MainTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ShowHomeOnMap"))) { notification in
             if let homeId = notification.userInfo?["homeId"] as? UUID {
                 print("🗺️ Received ShowHomeOnMap notification for: \(homeId)")
+                // Save current tab before switching to map
+                if selectedTab != 1 {
+                    previousTabBeforeMap = selectedTab
+                    print("📍 Saving previous tab: \(previousTabBeforeMap)")
+                }
                 selectedTab = 1 // Switch to Map tab
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ReturnToTrendingFromMap"))) { notification in
-            print("🔙 Returning to Trending tab from map")
-            selectedTab = 0 // Switch back to Trending tab
+            print("🔙 Returning to previous tab from map: \(previousTabBeforeMap)")
+            selectedTab = previousTabBeforeMap // Switch back to wherever user came from
 
-            // Give the tab switch a moment to complete, then notify FeedView to scroll
+            // Give the tab switch a moment to complete, then notify the appropriate view to scroll
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 if let homeId = notification.userInfo?["homeId"] as? UUID {
-                    print("📍 Forwarding homeId to FeedView: \(homeId)")
+                    print("📍 Forwarding homeId to view: \(homeId)")
+                    // Send scroll notification - both FeedView and PriceFeedView can listen
                     NotificationCenter.default.post(
                         name: NSNotification.Name("ScrollToHome"),
                         object: nil,

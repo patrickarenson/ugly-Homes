@@ -7,6 +7,9 @@
 
 import Foundation
 
+/// Type alias for cleaner API access (Config.apiBaseURL)
+typealias Config = APIConfig
+
 struct APIConfig {
     // MARK: - Quick Import API
 
@@ -31,6 +34,13 @@ struct APIConfig {
 
     static var scrapingAPIEndpoint: String {
         return "\(scrapingAPIBaseURL)/api/scrape-listing"
+    }
+
+    // MARK: - General API Base URL
+
+    /// Base URL for all API calls (onboarding, scraping, etc.)
+    static var apiBaseURL: String {
+        return scrapingAPIBaseURL
     }
 
     // MARK: - Helper

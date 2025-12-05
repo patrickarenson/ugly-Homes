@@ -187,6 +187,7 @@ struct CommentsView: View {
                                 CommentRow(
                                     comment: comment,
                                     currentUserId: currentUserId,
+                                    postOwnerId: home.userId,
                                     onDelete: {
                                         commentToDelete = comment
                                         showDeleteAlert = true
@@ -833,6 +834,7 @@ struct CommentsView: View {
 struct CommentRow: View {
     let comment: Comment
     let currentUserId: UUID?
+    let postOwnerId: UUID
     let onDelete: () -> Void
 
     var body: some View {
@@ -888,8 +890,9 @@ struct CommentRow: View {
 
             Spacer()
 
-            // Delete button (only show if current user owns this comment)
-            if let currentUserId = currentUserId, currentUserId == comment.userId {
+            // Delete button - show if current user is the comment owner OR post owner
+            if let currentUserId = currentUserId,
+               (currentUserId == comment.userId || currentUserId == postOwnerId) {
                 Button(action: onDelete) {
                     Image(systemName: "trash")
                         .font(.caption)

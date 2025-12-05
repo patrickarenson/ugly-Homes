@@ -1,5 +1,5 @@
 # Claude Code - Project Status
-**Last Updated:** November 23, 2025 @ 12:15 PM
+**Last Updated:** December 1, 2025
 
 **⚠️ TESTING NOTE**: Always test on physical iPhone - simulator causes computer to crash
 
@@ -104,16 +104,16 @@
 
 ### Pending Issues:
 
-1. ⚠️ **Map Pin Not Rendering** - User reported pin not showing
-   - Changed condition from `postType != "project"` to location data check
-   - Need to verify properties have address/city/state data
-   - May need additional debugging
+~~1. ⚠️ **Map Pin Not Rendering**~~ - ✅ FIXED (December 1, 2025)
 
-2. ⚠️ **Scroll Position Still Not Working** - User confirmed issue persists
-   - All notification chain implemented correctly
-   - May be timing issue with ScrollViewReader
-   - Consider adding longer delay or different scroll trigger mechanism
-   - Check console logs for notification delivery
+~~2. ⚠️ **Scroll Position Still Not Working**~~ - ✅ FIXED (December 1, 2025)
+
+~~3. ⚠️ **Cron Job Not Active**~~ - ✅ FIXED (December 1, 2025)
+   - Migrated from local Mac cron to **Vercel Cron Jobs** (cloud-based)
+   - No longer requires computer to be on
+   - Runs daily at 2:30 AM EST (7:30 AM UTC)
+   - Endpoint: `https://housers-web.vercel.app/api/auto-import`
+   - 93 total properties imported by houser account
 
 ### Testing Checklist:
 
@@ -127,7 +127,9 @@
 
 ### Status:
 - ✅ Code committed and pushed (commit: 21a5713)
-- ⚠️ Map navigation features need additional testing/debugging
+- ✅ Map navigation features fully working (fixed December 1, 2025)
+- ✅ Auto-import system working (91 properties imported to date)
+- ✅ Cron job migrated to Vercel (runs automatically without computer on)
 - ✅ Avatar system fully implemented and working
 - ✅ Auto-post system configured and scheduled
 

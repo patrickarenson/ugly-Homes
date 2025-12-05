@@ -100,46 +100,232 @@ async function scrapeProperty(zillowUrl) {
 }
 
 /**
- * Generate hashtags for a property (similar to iOS TagGenerator)
+ * Generate hashtags for a property (matching iOS TagGenerator logic)
  */
 function generateTags(city, price, bedrooms, title, description) {
   const tags = [];
 
-  // 1. City tag
+  // 1. City tag (always include if available)
   if (city) {
-    const cleanCity = city.replace(/[^a-zA-Z]/g, '');
+    const cleanCity = city
+      .replace(/\s/g, '')
+      .replace(/-/g, '')
+      .replace(/'/g, '');
     tags.push(`#${cleanCity}`);
   }
 
-  // 2. Price range tags
+  // 2. Price range tags (matching iOS exactly)
   if (price) {
-    if (price < 200000) tags.push('#Under200K');
-    else if (price < 300000) tags.push('#Under300K');
-    else if (price < 500000) tags.push('#Under500K');
-    else if (price < 750000) tags.push('#Under750K');
-    else if (price < 1000000) tags.push('#Under1M');
-    else tags.push('#LuxuryHomes');
+    if (price < 100000) {
+      tags.push('#Under100K');
+    } else if (price < 200000) {
+      tags.push('#Under200K');
+    } else if (price < 300000) {
+      tags.push('#Under300K');
+    } else if (price < 400000) {
+      tags.push('#Under400K');
+    } else if (price < 500000) {
+      tags.push('#Under500K');
+    } else if (price < 1000000) {
+      tags.push('#Over500K');
+    } else if (price < 5000000) {
+      tags.push('#Over1M');
+    } else if (price < 10000000) {
+      tags.push('#Over5M');
+    } else {
+      tags.push('#Over10M');
+    }
   }
 
-  // 3. Bedroom count tags
-  if (bedrooms) {
-    if (bedrooms >= 1) tags.push(`#${bedrooms}Bed`);
-    if (bedrooms >= 4) tags.push('#FamilyHome');
+  const text = `${title || ''} ${description || ''}`.toLowerCase();
+
+  // Detect distressed sales (used across multiple tags)
+  const isDistressedSale = text.includes('short sale') ||
+    text.includes('foreclosure') ||
+    text.includes('bank owned') ||
+    text.includes('reo') ||
+    text.includes('pre-foreclosure');
+
+  // 3. Waterfront (CRITICAL - major selling feature)
+  const hasWaterViewsOnly = (text.includes('water views') ||
+    text.includes('lake views') ||
+    text.includes('ocean views') ||
+    text.includes('river views')) &&
+    !(text.includes('waterfront') ||
+      text.includes('lakefront') ||
+      text.includes('oceanfront') ||
+      text.includes('dock') ||
+      text.includes('boat access'));
+
+  const hasActualWaterfront = text.includes('waterfront') ||
+    text.includes('water front') ||
+    text.includes('lakefront') ||
+    text.includes('lake front') ||
+    text.includes('oceanfront') ||
+    text.includes('ocean front') ||
+    text.includes('riverfront') ||
+    text.includes('river front') ||
+    text.includes('beachfront') ||
+    text.includes('beach front') ||
+    text.includes('dock') ||
+    text.includes('boat dock') ||
+    text.includes('boat slip') ||
+    text.includes('boat access') ||
+    text.includes('water access');
+
+  if (hasActualWaterfront && !hasWaterViewsOnly) {
+    tags.push('#Waterfront');
   }
 
-  // 4. Feature tags from title/description
-  const combinedText = `${title || ''} ${description || ''}`.toLowerCase();
+  // 4. Buyer Persona Tags
 
-  if (combinedText.includes('pool')) tags.push('#Pool');
-  if (combinedText.includes('waterfront') || combinedText.includes('lake') || combinedText.includes('water view')) tags.push('#Waterfront');
-  if (combinedText.includes('golf')) tags.push('#GolfCourse');
-  if (combinedText.includes('gated')) tags.push('#GatedCommunity');
-  if (combinedText.includes('new construction') || combinedText.includes('newly built')) tags.push('#NewConstruction');
-  if (combinedText.includes('updated') || combinedText.includes('renovated') || combinedText.includes('remodeled')) tags.push('#Updated');
-  if (combinedText.includes('fixer') || combinedText.includes('needs work') || combinedText.includes('tlc')) tags.push('#FixerUpper');
+  // Cash Flow Investors (only under $2M for residential)
+  const isCashFlowPriceRange = !price || price < 2000000;
+  if (isCashFlowPriceRange && (
+    text.includes('rental income') ||
+    text.includes('income producing') ||
+    text.includes('cash flow') ||
+    text.includes('cap rate') ||
+    text.includes('multifamily') ||
+    text.includes('multi-family') ||
+    text.includes('investment property') ||
+    text.includes('investor special') ||
+    text.includes('as-is') ||
+    text.includes('as is'))) {
+    tags.push('#CashFlow');
+  }
 
-  // Deduplicate and limit to 8 tags
-  return [...new Set(tags)].slice(0, 8);
+  // Vacation / Airbnb Buyers
+  const hasWaterViews = text.includes('water views') ||
+    text.includes('lake views') ||
+    text.includes('ocean views');
+
+  const isVacationPriceRange = !price || price < 10000000;
+  const hasExplicitVacationIndicators = text.includes('vacation-ready') ||
+    text.includes('vacation ready') ||
+    text.includes('short-term rental') ||
+    text.includes('short term rental') ||
+    text.includes('airbnb') ||
+    text.includes('vrbo') ||
+    text.includes('vacation home');
+
+  const hasLocationVacationAppeal = hasActualWaterfront || hasWaterViews;
+  const isPrimaryResidence = text.includes('elementary') ||
+    text.includes('school district');
+
+  if (!isPrimaryResidence && (hasExplicitVacationIndicators ||
+    (isVacationPriceRange && hasLocationVacationAppeal))) {
+    tags.push('#Vacation');
+  }
+
+  // Forever Home Buyers (under $2M, not distressed)
+  const isForeverHomePriceRange = !price || price < 2000000;
+  if (!isDistressedSale && isForeverHomePriceRange && (
+    text.includes('spacious') ||
+    text.includes('family-friendly') ||
+    text.includes('family friendly') ||
+    text.includes('open floor plan') ||
+    text.includes('bonus room') ||
+    text.includes('upgraded') ||
+    text.includes('office') ||
+    text.includes('backyard') ||
+    text.includes('garage'))) {
+    tags.push('#ForeverHome');
+  }
+
+  // Starter Home (under $750K)
+  const isStarterPriceRange = !price || price < 750000;
+  if (isStarterPriceRange && (
+    text.includes('updated') ||
+    text.includes('move-in ready') ||
+    text.includes('move in ready') ||
+    text.includes('affordable') ||
+    text.includes('single-family') ||
+    text.includes('single family') ||
+    text.includes('good school') ||
+    text.includes('school district') ||
+    text.includes('neighborhood'))) {
+    tags.push('#StarterHome');
+  }
+
+  // Luxury Properties (over $10M or has luxury indicators)
+  const isLuxuryPrice = price && price >= 10000000;
+  const isUnderConstruction = text.includes('under renovation') ||
+    text.includes('under construction') ||
+    text.includes('completion in');
+
+  if (!isUnderConstruction && (isLuxuryPrice ||
+    text.includes('luxury') ||
+    text.includes('estate') ||
+    text.includes('custom-built') ||
+    text.includes('custom built') ||
+    text.includes('gourmet kitchen') ||
+    text.includes('resort-style') ||
+    text.includes('resort style') ||
+    text.includes('gated community') ||
+    text.includes('designer finishes') ||
+    text.includes('high-end finishes') ||
+    text.includes('spa-like') ||
+    text.includes('smart home') ||
+    text.includes('infinity pool') ||
+    text.includes('wine cellar') ||
+    text.includes('home theater') ||
+    text.includes('penthouse'))) {
+    tags.push('#Luxury');
+  }
+
+  // New Build
+  const isConversion = text.includes('conversion') ||
+    text.includes('transformation');
+
+  if (!isConversion && (
+    text.includes('new construction') ||
+    text.includes('newly built') ||
+    text.includes('brand new home') ||
+    text.includes('built in 2024') ||
+    text.includes('built in 2025') ||
+    text.includes('builder warranty') ||
+    text.includes('under construction') ||
+    text.includes('never lived in'))) {
+    tags.push('#NewConstruction');
+  }
+
+  // 5. Feature Tags
+
+  // Pool (actual existing pools only)
+  const hasActualPool = text.includes('pool') &&
+    !text.includes('community pool') &&
+    !text.includes('pool possible') &&
+    !text.includes('room for pool');
+
+  if (hasActualPool) {
+    tags.push('#Pool');
+  }
+
+  // Fixer Upper
+  if (text.includes('fixer') ||
+    text.includes('fixer-upper') ||
+    text.includes('fixer upper') ||
+    text.includes('needs work') ||
+    text.includes('needs tlc') ||
+    text.includes('tlc') ||
+    text.includes('handyman') ||
+    text.includes('sweat equity')) {
+    tags.push('#FixerUpper');
+  }
+
+  // Below Market
+  if (text.includes('under market') ||
+    text.includes('below market') ||
+    text.includes('priced to sell') ||
+    text.includes('motivated seller') ||
+    text.includes('reduced') ||
+    isDistressedSale) {
+    tags.push('#BelowMarket');
+  }
+
+  // Deduplicate and limit to 7 tags (matching iOS)
+  return [...new Set(tags)].slice(0, 7);
 }
 
 /**
